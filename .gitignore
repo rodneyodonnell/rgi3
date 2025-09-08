@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.so
+.build/
+dist/
+*.egg-info/
+.venv/
+uv.lock.backup
+.ipynb_checkpoints/
+.notebooks_cache/
+.DS_Store
+.idea/
+.vscode/
+.env
+
+# ignore output dirs
+/data/
+/models/
+
+# Ignore scratch notebooks
+notebooks/scratch/
+
+# emacs shrapnel
+*~
+.#*

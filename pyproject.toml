@@ -7,8 +7,41 @@ authors = [
     { email = "rodneyodonnell1@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "torch>=2.8.0",
+    "wandb>=0.21.3",
+]
+
+[dependency-groups]
+dev = [
+  "ruff",
+  "pytest",
+  "pytest-cov",
+  "pre-commit",
+  "nbstripout",
+  "ty",
+  "jupyterlab",
+  "ipykernel",
+  "jupytext",
+  "matplotlib",
+  "pandas",
+  ]
+
 
 [build-system]
 requires = ["uv_build>=0.8.15,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+extend-exclude = [
+  "src/rgi/nanogpt/fork/**",
+  "**/notebooks/*.ipynb",
+]
+
+[tool.ty.src]
+exclude = [
+  "src/rgi/nanogpt/fork/**",
+  "**/notebooks/*.ipynb",
+]
