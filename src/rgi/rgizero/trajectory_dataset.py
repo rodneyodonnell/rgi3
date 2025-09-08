@@ -87,7 +87,7 @@ class TrajectoryDatasetBuilder:
         self.policies.append(policies)
         self.values.append(values)
 
-    def save(self, root_dir: str, split: str):
+    def save(self, root_dir: str, split: str, shuffle: bool = True):
         split_dir = pathlib.Path(root_dir) / split
         split_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,6 +95,13 @@ class TrajectoryDatasetBuilder:
         with open(split_dir / "vocab.json", "w") as f:
             vocab_dict = self.vocab.to_dict()
             json.dump(vocab_dict, f)
+
+        if shuffle:
+            # shuffle in builder so we don't need to do it in DataLoader.
+            indices = np.random.permutation(len(self.actions))
+            self.actions = [self.actions[i] for i in indices]
+            self.policies = [self.policies[i] for i in indices]
+            self.values = [self.values[i] for i in indices]
 
         action_lengths = [len(action) for action in self.actions]
         boundaries = np.cumsum([0] + action_lengths).astype(np.int64)
@@ -197,15 +204,14 @@ def build_trajectory_loader(
     block_size: int,
     batch_size: int,
     device_is_cuda: bool,
-    shuffle: bool = True,
     workers: int = 4,
 ) -> DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     ds = TrajectoryDataset(root_dir, split, block_size)
     return DataLoader(
         ds,
         batch_size=batch_size,
-        shuffle=shuffle,
         num_workers=workers,
+        shuffle=False,
         pin_memory=device_is_cuda,
         collate_fn=trajectory_collate_fn,
     )  # type: ignore
