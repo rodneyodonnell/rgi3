@@ -12,7 +12,6 @@ class TestNanoGPT:
         wrapper.run_nanogpt_script("prepare_shakespeare")
         # If we get here without exception, the test passes
 
-
     def test_femto_gpt_training(self):
         """Test femto GPT model training with minimal iterations."""
         # Femto GPT configuration from the notebook
