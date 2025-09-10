@@ -11,6 +11,7 @@ import pathlib
 import numpy as np
 import json
 import torch
+import warnings
 from torch.utils.data import Dataset, DataLoader
 
 from dataclasses import dataclass
@@ -173,9 +174,12 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         action_start_idx = self.boundaries[trajectory_idx]
         action_end_idx = self.boundaries[trajectory_idx + 1]
 
-        action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
-        policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
-        value = torch.from_numpy(self.value_data[action_start_idx:action_end_idx])
+        # Suppress warning about non-writable arrays since we only read from tensors
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
+            action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
+            policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
+            value = torch.from_numpy(self.value_data[action_start_idx:action_end_idx])
 
         if apply_padding:
             pad_len = self.block_size - (action_end_idx - action_start_idx)
