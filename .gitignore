@@ -11,6 +11,8 @@ uv.lock.backup
 .DS_Store
 .idea/
 .vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
 .env
 
 # ignore output dirs

@@ -1928,6 +1928,7 @@ name = "rgi"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "ruff" },
     { name = "torch" },
     { name = "wandb" },
 ]
@@ -1949,6 +1950,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ruff", specifier = ">=0.12.12" },
     { name = "torch", specifier = ">=2.8.0" },
     { name = "wandb", specifier = ">=0.21.3" },
 ]

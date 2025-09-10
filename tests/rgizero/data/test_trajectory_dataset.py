@@ -22,7 +22,7 @@ class TrajectoryDatasetFixture:
 
 
 def write_random_trajectory_dataset(
-    tmp_path: Path, traj_lengths: list[int], seed: int | None = None
+    tmp_path: Path, traj_lengths: list[int], seed: int | None = None, shuffle: bool = False
 ) -> TrajectoryDatasetFixture:
     seed = seed if seed is not None else np.random.randint(0, 1000000)
     root = tmp_path / "test_data"
@@ -36,7 +36,7 @@ def write_random_trajectory_dataset(
         policies = rng.random((length, 7), dtype=np.float32)
         values = rng.integers(-1, 2, size=length)  # -1,0,1
         builder.add_trajectory(actions, policies, values)
-    builder.save(str(root), split)
+    builder.save(str(root), split, shuffle=shuffle)
     orig_actions = [builder.actions[i] for i in range(len(builder.actions))]
     orig_policies = [builder.policies[i] for i in range(len(builder.policies))]
     orig_values = [builder.values[i] for i in range(len(builder.values))]
