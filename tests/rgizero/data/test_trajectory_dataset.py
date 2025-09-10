@@ -4,7 +4,12 @@ from pathlib import Path
 import pytest
 from dataclasses import dataclass
 
-from rgi.rgizero.trajectory_dataset import Vocab, TrajectoryDatasetBuilder, TrajectoryDataset, build_trajectory_loader
+from rgi.rgizero.data.trajectory_dataset import (
+    Vocab,
+    TrajectoryDatasetBuilder,
+    TrajectoryDataset,
+    build_trajectory_loader,
+)
 
 
 @dataclass
