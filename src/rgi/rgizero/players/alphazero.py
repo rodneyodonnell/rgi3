@@ -17,6 +17,7 @@ from typing import Protocol, Sequence, Any
 from dataclasses import dataclass
 
 from rgi.rgizero.games.base import Game
+from rgi.rgizero.players.base import Player, TGameState, TAction, ActionResult
 
 
 class NetworkEvaluator(Protocol):
@@ -152,7 +153,7 @@ class MCTSNode:
         self.total_visits += 1
 
 
-class MCTSAgent:
+class AlphazeroPlayer(Player[TGameState, TAction]):
     """AlphaZero-style MCTS agent using neural network evaluation."""
 
     def __init__(
@@ -272,48 +273,41 @@ class MCTSAgent:
             node.backup(action_idx, values)
             return values
 
-    def select_action(self, state) -> tuple[Any, np.ndarray, dict]:
-        """Select action using MCTS.
-
-        Args:
-            state: Game state to select action from
-
-        Returns:
-            Tuple of (action, policy, info) where:
-            - action: Selected action
-            - policy: Visit count policy over legal actions
-            - info: Dictionary with search statistics
-        """
-        legal_actions, visit_counts, mean_values, stats = self.search(state)
+    def select_action(self, game_state: Any) -> ActionResult[Any]:
+        """Player interface implementation."""
+        legal_actions, visit_counts, mean_values, stats = self.search(game_state)
 
         # Convert visit counts to policy using temperature
-        # policy ∝ visit_counts^(1/T) = exp(log(visit_counts) / T)
-        # Use log domain to avoid numerical instability
-        epsilon = 1e-10
-        log_counts = np.log(visit_counts + epsilon)
-        log_policy = log_counts / (self.temperature + epsilon)
-        stable_log_policy = log_policy - np.max(log_policy)
-        unnormalised_policy = np.exp(stable_log_policy)
-        policy = unnormalised_policy / np.sum(unnormalised_policy)
+        if self.temperature == 0:
+            # Deterministic selection
+            action_idx = int(np.argmax(visit_counts))
+        else:
+            # Stochastic selection with temperature
+            epsilon = 1e-10
+            log_counts = np.log(visit_counts + epsilon)
+            log_policy = log_counts / (self.temperature + epsilon)
+            stable_log_policy = log_policy - np.max(log_policy)
+            unnormalised_policy = np.exp(stable_log_policy)
+            policy = unnormalised_policy / np.sum(unnormalised_policy)
+            action_idx = np.random.choice(len(policy), p=policy)
 
-        # Sample action
-        action_idx = np.random.choice(len(policy), p=policy)
         action = legal_actions[action_idx]
+        return ActionResult(
+            action,
+            {
+                "visits": visit_counts[action_idx],
+                "visit_counts": visit_counts,
+                "mean_value": mean_values[action_idx],
+                "mean_values": mean_values,
+                "policy": policy,
+                "temperature": self.temperature,
+                "legal_actions": legal_actions,
+                "stats": stats,
+            },
+        )
 
-        info = {
-            "simulations": stats.simulations,
-            "tree_depth": stats.tree_depth,
-            "visit_counts": visit_counts,
-            "mean_values": mean_values,
-            "policy": policy,
-            "temperature": self.temperature,
-            "legal_actions": legal_actions,
-        }
 
-        return action, policy, info
-
-
-def play_game(game: Game, agents: list[MCTSAgent], max_moves: int = 1000) -> dict:
+def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_moves: int = 1000) -> dict:
     """Play a complete game between MCTS agents.
 
     Args:
@@ -333,11 +327,11 @@ def play_game(game: Game, agents: list[MCTSAgent], max_moves: int = 1000) -> dic
         current_player = game.current_player_id(state)
         agent = agents[current_player - 1]  # Convert to 0-based indexing
 
-        action, policy, info = agent.select_action(state)
-        move_history.append(action)
-        policies.append(policy)
+        result = agent.select_action(state)
+        move_history.append(result.action)
+        policies.append(result.info["policy"])
 
-        state = game.next_state(state, action)
+        state = game.next_state(state, result.action)
         moves += 1
 
     # Determine outcome

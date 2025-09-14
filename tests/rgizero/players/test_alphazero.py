@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import Mock
 
 from rgi.rgizero.games.connect4 import Connect4Game
-from rgi.rgizero.players.alphazero import MCTSAgent, MCTSNode
+from rgi.rgizero.players.alphazero import AlphazeroPlayer, MCTSNode
 
 
 class MockEvaluator:
@@ -134,14 +134,14 @@ class TestMCTSNode:
         assert node.total_visits == 2
 
 
-class TestMCTSAgent:
-    """Test MCTSAgent functionality."""
+class TestAlphazeroPlayer:
+    """Test AlphazeroPlayer functionality."""
 
     def test_agent_initialization(self):
         """Test agent initialization."""
         game = Connect4Game()
         evaluator = MockEvaluator()
-        agent = MCTSAgent(game, evaluator, simulations=100)
+        agent = AlphazeroPlayer(game, evaluator, simulations=100)
 
         assert agent.game == game
         assert agent.evaluator == evaluator
@@ -153,7 +153,7 @@ class TestMCTSAgent:
         """Test basic search functionality."""
         game = Connect4Game()
         evaluator = MockEvaluator({7: np.ones(7) / 7})  # Uniform over 7 actions
-        agent = MCTSAgent(game, evaluator, simulations=10)
+        agent = AlphazeroPlayer(game, evaluator, simulations=10)
 
         state = game.initial_state()
         legal_actions, visit_counts, mean_values, stats = agent.search(state)
@@ -170,14 +170,17 @@ class TestMCTSAgent:
         evaluator = MockEvaluator({7: np.ones(7) / 7})
 
         # High temperature should be more uniform
-        agent_hot = MCTSAgent(game, evaluator, simulations=20, temperature=2.0)
+        agent_hot = AlphazeroPlayer(game, evaluator, simulations=20, temperature=2.0)
         # Low temperature should be more peaked
-        agent_cold = MCTSAgent(game, evaluator, simulations=20, temperature=0.1)
+        agent_cold = AlphazeroPlayer(game, evaluator, simulations=20, temperature=0.1)
 
         state = game.initial_state()
 
-        _, policy_hot, _ = agent_hot.select_action(state)
-        _, policy_cold, _ = agent_cold.select_action(state)
+        result_hot = agent_hot.select_action(state)
+        result_cold = agent_cold.select_action(state)
+
+        policy_hot = result_hot.info["policy"]
+        policy_cold = result_cold.info["policy"]
 
         # Hot policy should be more uniform (higher entropy)
         entropy_hot = -np.sum(policy_hot * np.log(policy_hot + 1e-8))
@@ -190,17 +193,17 @@ class TestMCTSAgent:
         game = Connect4Game()
         evaluator = MockEvaluator({7: np.array([1.0, 0, 0, 0, 0, 0, 0])})  # Concentrated policy
 
-        agent_no_noise = MCTSAgent(game, evaluator, simulations=10, add_noise=False)
-        agent_with_noise = MCTSAgent(game, evaluator, simulations=10, add_noise=True, noise_epsilon=0.5)
+        agent_no_noise = AlphazeroPlayer(game, evaluator, simulations=10, add_noise=False)
+        agent_with_noise = AlphazeroPlayer(game, evaluator, simulations=10, add_noise=True, noise_epsilon=0.5)
 
         state = game.initial_state()
 
-        _, _, info_no_noise = agent_no_noise.select_action(state)
-        _, _, info_with_noise = agent_with_noise.select_action(state)
+        result_no_noise = agent_no_noise.select_action(state)
+        result_with_noise = agent_with_noise.select_action(state)
 
         # With noise, the policy should be less concentrated
-        policy_no_noise = info_no_noise["policy"]
-        policy_with_noise = info_with_noise["policy"]
+        policy_no_noise = result_no_noise.info["policy"]
+        policy_with_noise = result_with_noise.info["policy"]
 
         # The max probability should be lower with noise
         assert np.max(policy_with_noise) < np.max(policy_no_noise)
@@ -225,10 +228,10 @@ class TestMCTSAgent:
         evaluator = Mock()
         evaluator.evaluate = mock_evaluate
 
-        agent = MCTSAgent(game, evaluator, simulations=20)
+        agent = AlphazeroPlayer(game, evaluator, simulations=20)
         state = game.initial_state()
 
-        action, policy, info = agent.select_action(state)
+        result = agent.select_action(state)
 
         # With enough simulations, should show some preference for center
         # (this test is probabilistic, so we check that the system is working)
@@ -236,40 +239,33 @@ class TestMCTSAgent:
         center_indices = [2, 3, 4]  # 0-indexed for mean_values array
 
         # Either the selected action is in center, OR center actions got reasonable visits
-        center_visits = sum(info["visit_counts"][i] for i in center_indices)
-        total_visits = sum(info["visit_counts"])
+        center_visits = sum(result.info["visit_counts"][i] for i in center_indices)
+        total_visits = sum(result.info["visit_counts"])
         center_ratio = center_visits / total_visits if total_visits > 0 else 0
 
         # With our biased evaluator, center should get at least some visits
-        assert action in center_actions or center_ratio > 0.2
+        assert result.action in center_actions or center_ratio > 0.2
 
     def test_info_dict_contents(self):
         """Test that info dict contains expected information."""
         game = Connect4Game()
         evaluator = MockEvaluator({7: np.ones(7) / 7})
-        agent = MCTSAgent(game, evaluator, simulations=15, temperature=0.8)
+        agent = AlphazeroPlayer(game, evaluator, simulations=15, temperature=0.8)
 
         state = game.initial_state()
-        action, policy, info = agent.select_action(state)
+        result = agent.select_action(state)
 
-        required_keys = {
-            "simulations",
-            "tree_depth",
-            "visit_counts",
-            "mean_values",
-            "policy",
-            "temperature",
-            "legal_actions",
-        }
-        assert set(info.keys()) == required_keys
+        required_keys = {"visit_counts", "mean_values", "policy", "temperature", "legal_actions", "stats"}
+        assert required_keys.issubset(result.info.keys())
 
-        assert info["simulations"] == 15
-        assert info["temperature"] == 0.8
-        assert len(info["legal_actions"]) == 7
-        assert len(info["visit_counts"]) == 7
-        assert len(info["mean_values"]) == 7
-        assert len(info["policy"]) == 7
-        assert np.allclose(np.sum(info["policy"]), 1.0)  # Policy should sum to 1
+        assert result.info["stats"].simulations == 15
+        assert result.info["stats"].tree_depth == 1
+        assert result.info["temperature"] == 0.8
+        assert len(result.info["legal_actions"]) == 7
+        assert len(result.info["visit_counts"]) == 7
+        assert len(result.info["mean_values"]) == 7
+        assert len(result.info["policy"]) == 7
+        assert np.allclose(np.sum(result.info["policy"]), 1.0)  # Policy should sum to 1
 
 
 class TestGameIntegration:
@@ -293,8 +289,8 @@ class TestGameIntegration:
         )
 
         agents = [
-            MCTSAgent(game, evaluator, simulations=100, temperature=0.1),
-            MCTSAgent(game, evaluator, simulations=100, temperature=0.1),
+            AlphazeroPlayer(game, evaluator, simulations=100, temperature=0.1),
+            AlphazeroPlayer(game, evaluator, simulations=100, temperature=0.1),
         ]
 
         result = play_game(game, agents, max_moves=50)
@@ -319,7 +315,7 @@ class TestGameIntegration:
 
         game = Connect4Game()
         evaluator = MockEvaluator({7: np.ones(7) / 7})
-        agent = MCTSAgent(game, evaluator, simulations=5)
+        agent = AlphazeroPlayer(game, evaluator, simulations=5)
 
         state = game.initial_state()
 
@@ -327,8 +323,8 @@ class TestGameIntegration:
         assert game.num_players(state) == 2
 
         # The agent should handle this correctly
-        action, policy, info = agent.select_action(state)
-        assert action in game.legal_actions(state)
+        result = agent.select_action(state)
+        assert result.action in game.legal_actions(state)
 
     def test_value_perspective_handling(self):
         """Test that value perspectives are handled correctly."""
@@ -336,7 +332,7 @@ class TestGameIntegration:
 
         # Create evaluator that returns positive values for all positions
         evaluator = MockEvaluator({7: np.ones(7) / 7}, value=0.5)
-        agent = MCTSAgent(game, evaluator, simulations=10)
+        agent = AlphazeroPlayer(game, evaluator, simulations=10)
 
         state = game.initial_state()
 
@@ -366,7 +362,7 @@ class TestGameIntegration:
 
         game = Connect4Game()
         evaluator = MultiplayerEvaluator()
-        agent = MCTSAgent(game, evaluator, simulations=1)  # Single simulation for predictable behavior
+        agent = AlphazeroPlayer(game, evaluator, simulations=1)  # Single simulation for predictable behavior
 
         state = game.initial_state()
 
@@ -415,7 +411,7 @@ class TestGameIntegration:
         evaluator = DebugEvaluator()
 
         # Use more simulations to trigger recursive case
-        agent = MCTSAgent(game, evaluator, simulations=10)
+        agent = AlphazeroPlayer(game, evaluator, simulations=10)
 
         state = game.initial_state()
         assert game.current_player_id(state) == 1  # Player 1's turn
