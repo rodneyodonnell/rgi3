@@ -1005,6 +1005,19 @@ wheels = [
 ]
 
 [[package]]
+name = "llvmlite"
+version = "0.45.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/73/4b29b502618766276816f2f2a7cf9017bd3889bc38a49319bee9ad492b75/llvmlite-0.45.0.tar.gz", hash = "sha256:ceb0bcd20da949178bd7ab78af8de73e9f3c483ac46b5bef39f06a4862aa8336", size = 185289, upload-time = "2025-09-18T17:47:14.293Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d2/1e/dd09f15cf59eb528101917916291a6021148c356908e34c726e139a95687/llvmlite-0.45.0-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:f719f98e4f3a6292b1a6495500b2cf668d3604907499c483b326da5ce2ff9f01", size = 43043440, upload-time = "2025-09-18T17:41:46.947Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/e3/5d43a20dec7561a34f81081612eb860b8ee26233cf44cce7fc39c3aff4e9/llvmlite-0.45.0-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:4ffa899f7584ef48f1037308d92cb19460a0afb834aa1fe9db9d3e52d0e81a79", size = 37253036, upload-time = "2025-09-18T17:43:18.15Z" },
+    { url = "https://files.pythonhosted.org/packages/00/c4/c2e5ade9354908630aec2eeeeacbfe341a96d07e080dc0cd25cbbb9c8c82/llvmlite-0.45.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:2c12fde908967e464b265554143c030ba4dcc2b981a815582d7708a30295018e", size = 56288125, upload-time = "2025-09-18T17:37:32.215Z" },
+    { url = "https://files.pythonhosted.org/packages/95/d5/d5aefc379e189d83483d7263efe794f5ee0783ad90be1b09f58b98c738ee/llvmlite-0.45.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:83567cbbf598eb57f108222dfc3dfee065c20a2aa004391360949f2e8ff2b8b4", size = 55140873, upload-time = "2025-09-18T17:39:44.928Z" },
+    { url = "https://files.pythonhosted.org/packages/21/16/bac6a35ae77d6f881d2c6b54cbb2df2b07e030e1a66da8041359d09b0d87/llvmlite-0.45.0-cp313-cp313-win_amd64.whl", hash = "sha256:f68890ceb662e874933103e91e239389ff7275c4befba8e43ccd46ae3231b89e", size = 37946102, upload-time = "2025-09-18T17:44:56.051Z" },
+]
+
+[[package]]
 name = "markdown-it-py"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1246,6 +1259,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/54/d2/92fa3243712b9a3e8bafaf60aac366da1cada3639ca767ff4b5b3654ec28/notebook_shim-0.2.4.tar.gz", hash = "sha256:b4b2cfa1b65d98307ca24361f5b30fe785b53c3fd07b7a47e89acb5e6ac638cb", size = 13167, upload-time = "2024-02-14T23:35:18.353Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f9/33/bd5b9137445ea4b680023eb0469b2bb969d61303dedb2aac6560ff3d14a1/notebook_shim-0.2.4-py3-none-any.whl", hash = "sha256:411a5be4e9dc882a074ccbcae671eda64cceb068767e9a3419096986560e1cef", size = 13307, upload-time = "2024-02-14T23:35:16.286Z" },
+]
+
+[[package]]
+name = "numba"
+version = "0.62.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "llvmlite" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e5/96/66dae7911cb331e99bf9afe35703317d8da0fad81ff49fed77f4855e4b60/numba-0.62.0.tar.gz", hash = "sha256:2afcc7899dc93fefecbb274a19c592170bc2dbfae02b00f83e305332a9857a5a", size = 2749680, upload-time = "2025-09-18T17:58:11.394Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/ff/dd3047eb05e9bcf5c986885a645d8dd1df509ebf1f9b0091c143b1ebc6b4/numba-0.62.0-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:07e76ac7bcd47156a758df52e9752fdfb94ff5f80b78c4710cabc568d8d3d6ad", size = 2685768, upload-time = "2025-09-18T17:59:21.128Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/57/bdc50e30b8fcf387cfe596e42ec4d9b8b3e2121cc1171ecbb990535a9aa9/numba-0.62.0-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:a972689dad64a7047f555d93ce829fe05ca2519ad0cf7af0071a64145c571039", size = 2688742, upload-time = "2025-09-18T17:59:34.674Z" },
+    { url = "https://files.pythonhosted.org/packages/45/1e/e4e3fe4bcd971ea8e5f22f58f4dcce4b9f69c1299ff81f5740e3a007e817/numba-0.62.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f789b1f2997fc34b1b88fcc4481886dcd44afcffbd3e28affedce54aec7fdcc1", size = 3514481, upload-time = "2025-09-18T17:58:51.201Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/ac/98205cb536b756a3b9d2d198df8deee32cb4ec01740af77715c67f84c402/numba-0.62.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:516525981f19f36d3a0bada0fb7479cf0bf925b5e389d03aac87f3758c5cfb9e", size = 3503501, upload-time = "2025-09-18T17:59:06.568Z" },
+    { url = "https://files.pythonhosted.org/packages/98/a2/3a9eb747d77693054504540e9da0640c169dd97e3e268c1150bf55a22b97/numba-0.62.0-cp313-cp313-win_amd64.whl", hash = "sha256:591a9c485904f219a129b0493f89d27de24286fb66dd5a577b11edc62fc78db4", size = 2745529, upload-time = "2025-09-18T17:59:47.496Z" },
 ]
 
 [[package]]
@@ -1928,8 +1958,10 @@ name = "rgi"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "numba" },
     { name = "ruff" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "wandb" },
 ]
 
@@ -1950,8 +1982,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numba", specifier = ">=0.62.0" },
     { name = "ruff", specifier = ">=0.12.12" },
     { name = "torch", specifier = ">=2.8.0" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "wandb", specifier = ">=0.21.3" },
 ]
 
@@ -2237,6 +2271,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/59/593bd0f40f7355806bf6573b47b8c22f8e1374c9b6fd03114bd6b7a3dcfd/tornado-6.5.2-cp39-abi3-win32.whl", hash = "sha256:c6f29e94d9b37a95013bb669616352ddb82e3bfe8326fccee50583caebc8a5f0", size = 445023, upload-time = "2025-08-08T18:26:56.677Z" },
     { url = "https://files.pythonhosted.org/packages/c7/2a/f609b420c2f564a748a2d80ebfb2ee02a73ca80223af712fca591386cafb/tornado-6.5.2-cp39-abi3-win_amd64.whl", hash = "sha256:e56a5af51cc30dd2cae649429af65ca2f6571da29504a07995175df14c18f35f", size = 445427, upload-time = "2025-08-08T18:26:57.91Z" },
     { url = "https://files.pythonhosted.org/packages/5e/4f/e1f65e8f8c76d73658b33d33b81eed4322fb5085350e4328d5c956f0c8f9/tornado-6.5.2-cp39-abi3-win_arm64.whl", hash = "sha256:d6c33dc3672e3a1f3618eb63b7ef4683a7688e7b9e6e8f0d9aa5726360a004af", size = 444456, upload-time = "2025-08-08T18:26:59.207Z" },
+]
+
+[[package]]
+name = "tqdm"
+version = "4.67.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
 ]
 
 [[package]]

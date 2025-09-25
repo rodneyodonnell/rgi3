@@ -4,6 +4,7 @@ from typing import Sequence
 import numpy as np
 from numpy.typing import NDArray
 from typing_extensions import override
+from numba import jit
 
 from rgi.rgizero.games.base import Game
 
@@ -77,7 +78,18 @@ class Connect4Game(Game[GameState, Action]):
 
         return GameState(board=new_board, current_player=next_player, is_terminal=is_terminal, winner=winner)
 
-    def _calculate_winner(self, board: NDArray[np.int8], col: int, row: int, player: PlayerId) -> PlayerId:
+    def _calculate_winner(self, board: NDArray[np.int8], col: int, row: int, player: PlayerId) -> PlayerId | None:
+        """Check if the last move made at (row, col) by 'player' wins the game."""
+        return self._numba_calculate_winner(board, col, row, player, self.height, self.width, self.connect_length)
+
+    def _calculate_is_board_full(self, board: NDArray[np.int8]) -> bool:
+        return self._numba_calculate_is_board_full(board)
+
+    @staticmethod
+    @jit(nopython=True)
+    def _numba_calculate_winner(
+        board: NDArray[np.int8], col: int, row: int, player: PlayerId, height: int, width: int, connect_length: int
+    ) -> PlayerId | None:
         """Check if the last move made at (row, col) by 'player' wins the game."""
         directions = [
             (0, 1),  # Horizontal
@@ -90,15 +102,17 @@ class Connect4Game(Game[GameState, Action]):
             count = 1
             for factor in [-1, 1]:
                 r, c = row + dr * factor, col + dc * factor
-                while 0 <= r < self.height and 0 <= c < self.width and board[r, c] == player:
+                while 0 <= r < height and 0 <= c < width and board[r, c] == player:
                     count += 1
                     r, c = r + dr * factor, c + dc * factor
-                    if count >= self.connect_length:
+                    if count >= connect_length:
                         return player
 
         return None
 
-    def _calculate_is_board_full(self, board: NDArray[np.int8]) -> bool:
+    @staticmethod
+    @jit(nopython=True)
+    def _numba_calculate_is_board_full(board: NDArray[np.int8]) -> bool:
         return np.all(board != 0).item()
 
     @override
