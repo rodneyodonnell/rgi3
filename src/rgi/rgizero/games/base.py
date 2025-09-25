@@ -46,17 +46,17 @@ class Game(ABC, Generic[TGameState, TAction]):
         """Return True if the game is in a terminal state."""
 
     @abstractmethod
-    def reward(self, game_state: TGameState, player_id: TPlayerId) -> float:
+    def reward(self, game_state: TGameState, player_id: TPlayerId) -> float | None:
         """Return the reward for the given player in the given state.
 
-        This is typically 0 for non-terminal states, and -1, 0, or 1 for terminal states,
-        depending on whether the player lost, drew, or won respectively."""
+        This is typically 0, 0.5 or 1 for terminal states, depending on whether the
+        player lost, drew, or won respectively.
+
+        Reward should sum to 1 for all players.
+        """
 
     def reward_array(self, game_state: TGameState) -> NDArray[np.float32]:
-        """Return the reward for the given player in the given state as a NumPy array.
-
-        This is typically 0 for non-terminal states, and -1, 0, or 1 for terminal states,
-        depending on whether the player lost, drew, or won respectively."""
+        """Return the reward for the given player in the given state as a NumPy array."""
         return np.array(
             [self.reward(game_state, player_id) for player_id in self.player_ids(game_state)], dtype=np.float32
         )

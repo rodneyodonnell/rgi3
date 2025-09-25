@@ -37,12 +37,12 @@ def test_is_terminal(game: Count21Game) -> None:
 
 def test_reward(game: Count21Game) -> None:
     # non-terminal states
-    assert game.reward(Count21State(20, 1), 1) == 0.0
-    assert game.reward(Count21State(20, 1), 2) == 0.0
+    assert game.reward(Count21State(20, 1), 1) is None
+    assert game.reward(Count21State(20, 1), 2) is None
 
     # terminal state
     assert game.reward(Count21State(21, 1), 1) == 1.0
-    assert game.reward(Count21State(21, 1), 2) == -1.0
+    assert game.reward(Count21State(21, 1), 2) == 0.0
 
 
 def test_pretty_str(game: Count21Game) -> None:

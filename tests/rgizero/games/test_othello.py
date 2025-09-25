@@ -96,7 +96,7 @@ def test_reward_win(game: OthelloGame) -> None:
     board = np.ones((8, 8), dtype=np.int8)
     state = OthelloState(board=board, current_player=1, is_terminal=True)
     assert game.reward(state, 1) == 1.0
-    assert game.reward(state, 2) == -1.0
+    assert game.reward(state, 2) == 0.0
 
 
 def test_reward_draw(game: OthelloGame) -> None:
@@ -105,8 +105,8 @@ def test_reward_draw(game: OthelloGame) -> None:
     board[::2, ::2] = 2
     board[1::2, 1::2] = 2
     state = OthelloState(board=board, current_player=1, is_terminal=True)
-    assert game.reward(state, 1) == 0.0
-    assert game.reward(state, 2) == 0.0
+    assert game.reward(state, 1) == 0.5
+    assert game.reward(state, 2) == 0.5
 
 
 def test_full_game_simulation(game: OthelloGame) -> None:

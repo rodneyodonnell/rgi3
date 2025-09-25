@@ -12,7 +12,8 @@ from rgi.rgizero.games.base import Game
 class Connect4State:
     board: NDArray[np.int8]  # (height, width)
     current_player: int
-    winner: int  # The winner, if the game has ended, else 0
+    is_terminal: bool
+    winner: int | None  # The winner, if the game has ended. 0 for draw. None if game is not terminal.
 
 
 PlayerId = int
@@ -38,7 +39,8 @@ class Connect4Game(Game[GameState, Action]):
         return GameState(
             board=np.zeros([self.height, self.width], dtype=np.int8),
             current_player=1,
-            winner=0,
+            is_terminal=False,
+            winner=None,
         )
 
     @override
@@ -69,10 +71,11 @@ class Connect4Game(Game[GameState, Action]):
         new_board = game_state.board.copy()
         new_board[row, column] = game_state.current_player
 
-        winner = game_state.winner or self._calculate_winner(new_board, column, row, game_state.current_player)
+        winner = self._calculate_winner(new_board, column, row, game_state.current_player)
+        is_terminal = (winner is not None) or self._calculate_is_board_full(new_board)
         next_player: PlayerId = 2 if game_state.current_player == 1 else 1
 
-        return GameState(board=new_board, current_player=next_player, winner=winner)
+        return GameState(board=new_board, current_player=next_player, is_terminal=is_terminal, winner=winner)
 
     def _calculate_winner(self, board: NDArray[np.int8], col: int, row: int, player: PlayerId) -> PlayerId:
         """Check if the last move made at (row, col) by 'player' wins the game."""
@@ -93,21 +96,28 @@ class Connect4Game(Game[GameState, Action]):
                     if count >= self.connect_length:
                         return player
 
-        return 0  # No winner yet
+        return None
+
+    def _calculate_is_board_full(self, board: NDArray[np.int8]) -> bool:
+        return np.all(board != 0).item()
 
     @override
     def is_terminal(self, game_state: GameState) -> bool:
-        if game_state.winner:
-            return True
-        return np.all(game_state.board != 0).item()
+        return game_state.is_terminal
 
     @override
-    def reward(self, game_state: GameState, player_id: PlayerId) -> float:
-        if game_state.winner == 0:
-            return 0.0
+    def reward(self, game_state: GameState, player_id: PlayerId) -> float | None:
+        # No reward for non-terminal states
+        if not self.is_terminal(game_state):
+            return None
+
+        # Draw
+        if game_state.winner is None:
+            return 0.5
+
         if game_state.winner == player_id:
             return 1.0
-        return -1.0
+        return 0.0
 
     @override
     def pretty_str(self, game_state: GameState) -> str:
@@ -129,4 +139,5 @@ class Connect4Game(Game[GameState, Action]):
                     board[r, c] = 1  # Player 1
                 elif cell == "○":
                     board[r, c] = 2  # Player 2
-        return GameState(board=board, current_player=current_player, winner=0)
+        # TODO: Handle terminal & final states properly...
+        return GameState(board=board, current_player=current_player, is_terminal=False, winner=None)

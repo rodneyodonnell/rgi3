@@ -53,11 +53,11 @@ class Count21Game(Game[TGameState, TAction]):
         return game_state.score >= self.target
 
     @override
-    def reward(self, game_state: TGameState, player_id: TPlayerId) -> float:
+    def reward(self, game_state: TGameState, player_id: TPlayerId) -> float | None:
         "Reward the player who did NOT reach the target."
         if not self.is_terminal(game_state):
-            return 0.0
-        return 1.0 if self.current_player_id(game_state) == player_id else -1.0
+            return None
+        return 1.0 if self.current_player_id(game_state) == player_id else 0.0
 
     @override
     def pretty_str(self, game_state: TGameState) -> str:

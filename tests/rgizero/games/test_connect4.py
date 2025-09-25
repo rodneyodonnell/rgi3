@@ -56,8 +56,8 @@ def test_is_terminal(game: Connect4Game) -> None:
 
 def test_reward(game: Connect4Game) -> None:
     state = game.initial_state()
-    assert game.reward(state, 1) == 0
-    assert game.reward(state, 2) == 0
+    assert game.reward(state, 1) is None
+    assert game.reward(state, 2) is None
 
     # Create a winning state for player 1
     for i in range(4):
@@ -65,7 +65,7 @@ def test_reward(game: Connect4Game) -> None:
         if i < 3:
             state = game.next_state(state, action=i + 1)
     assert game.reward(state, 1) == 1
-    assert game.reward(state, 2) == -1
+    assert game.reward(state, 2) == 0
 
 
 def test_vertical_win(game: Connect4Game) -> None:
@@ -133,8 +133,8 @@ def test_pretty_str(game: Connect4Game) -> None:
     )
 
 
-@pytest.mark.parametrize("verbose", [True, False])
-def test_draw(game: Connect4Game, verbose: bool) -> None:
+# @pytest.mark.parametrize("verbose", [True, False])
+def test_draw(game: Connect4Game) -> None:
     state = game.initial_state()
     # fmt: off
     moves = [
@@ -150,17 +150,11 @@ def test_draw(game: Connect4Game, verbose: bool) -> None:
     for i, move in enumerate(moves):
         state = game.next_state(state, move)
         assert not game.is_terminal(state)
-        assert game.reward(state, 1) == 0
-        assert game.reward(state, 2) == 0
-        if verbose:
-            print(f"Debug - Move {i + 1}: {move}")
-            print(game.pretty_str(state))
-            print(f"Is terminal: {game.is_terminal(state)}\n")
 
     state = game.next_state(state, 7)
     assert game.is_terminal(state)
-    assert game.reward(state, 1) == 0
-    assert game.reward(state, 2) == 0
+    assert game.reward(state, 1) == 0.5
+    assert game.reward(state, 2) == 0.5
 
 
 @pytest.mark.parametrize(
@@ -231,9 +225,11 @@ def test_middle_of_row_win() -> None:
         """
     )
     state = game.parse_board(board_str, current_player=1)
-    assert state.winner == 0
+    assert state.is_terminal is False
+    assert state.winner is None
 
     new_state = game.next_state(state, 6)
+    assert new_state.is_terminal is True
     assert new_state.winner == 1, f"Expected Player 1 to win, but got {state.winner}"
 
 

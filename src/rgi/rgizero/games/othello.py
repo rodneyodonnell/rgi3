@@ -169,17 +169,17 @@ class OthelloGame(Game[GameState, Action]):
         return game_state.is_terminal
 
     @override
-    def reward(self, game_state: OthelloState, player_id: PlayerId) -> float:
+    def reward(self, game_state: OthelloState, player_id: PlayerId) -> float | None:
         if not self.is_terminal(game_state):
-            return 0.0
+            return None
         player_count = np.sum(game_state.board == player_id).item()
         opponent_count = np.sum(game_state.board == self.next_player(player_id)).item()
         if player_count > opponent_count:
             return 1.0
         elif player_count < opponent_count:
-            return -1.0
+            return 0.0
         else:
-            return 0.0  # Draw
+            return 0.5  # Draw
 
     @override
     def pretty_str(self, game_state: OthelloState) -> str:
