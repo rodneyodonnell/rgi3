@@ -335,18 +335,16 @@ def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_moves: 
         moves += 1
 
     # Determine outcome
+    rewards = game.reward_array(state)
     if game.is_terminal(state):
         winner = None
-        rewards = {}
-        for player_id in game.player_ids(state):
-            reward = game.reward(state, player_id)
-            rewards[player_id] = reward
-            if reward > 0:
+        rewards = game.reward_array(state)
+        for player_id, reward in zip(game.player_ids(state), rewards):
+            if reward >= 1.0:
                 winner = player_id
     else:
         # Max moves reached - declare draw
         winner = None
-        rewards = {player_id: 0.0 for player_id in game.player_ids(state)}
 
     return {
         "winner": winner,
