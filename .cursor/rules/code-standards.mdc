@@ -1,0 +1,35 @@
+---
+description: Code Style
+globs: ["*.py", "*.ipynb"]
+---
+
+<rule>
+name: code_standards
+description: Python code style and ML framework usage guidelines
+filters:
+  - type: file_extension
+    pattern: "\\.py$|\\.ipynb$"
+  - type: event
+    pattern: "file_create|file_modify"
+
+actions:
+  - type: require
+    message: |
+      # Formatting Requirements
+      
+      1. All Python files must be formatted using the project's autoformat script:
+         ```bash
+         ./scripts/format-and-run-checks.sh
+         ```
+         This will run:
+         - ruff format for import sorting and code formatting
+         
+         Configuration is in pyproject.toml:
+         - line-length = 120
+      
+      2. use lowercast types for list, dict, tuple, etc. Avoid 'from typing import List', etc.
+      
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
