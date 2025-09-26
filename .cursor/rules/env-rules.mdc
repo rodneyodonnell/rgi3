@@ -1,0 +1,20 @@
+---
+description: Manage env with uv and not pip
+globs: "*"
+---
+<rule>
+name: test_execution_priority
+description: Use uv for all package management and command execution
+filters:
+  - type: event
+    pattern: "command_run"
+actions:
+  - type: reject
+    conditions:
+      - pattern: "^(pip|python -m pip)"
+        message: "Always use `uv` for package management and command execution. Do not use `pip` directly."
+  - type: suggest
+    conditions:
+      - pattern: "^(?!uv run)"
+        message: "All work should be done within a virtual environment. For running commands, use `uv run <command>` or `source .venv/bin/activate`"
+</rule>

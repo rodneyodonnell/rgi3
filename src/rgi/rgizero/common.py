@@ -4,6 +4,10 @@ import torch
 import os
 
 
+class TOKENS:
+    START_OF_GAME = "START_OF_GAME"
+
+
 def _find_project_root(start_path: Path | None = None, marker: str = ".git") -> Path:
     """Find project root by looking for .git dir"""
     start_path = start_path or Path.cwd()
