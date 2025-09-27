@@ -27,14 +27,14 @@ def write_random_trajectory_dataset(
     seed = seed if seed is not None else np.random.randint(0, 1000000)
     root = tmp_path / "test_data"
     split = "train"
-    vocab = Vocab(vocab_size=7, itos=list("1234567"))
+    vocab = Vocab(itos="1234567")
     builder = TrajectoryDatasetBuilder(vocab)
     rng = np.random.default_rng(seed)
 
     for length in traj_lengths:
         actions = rng.integers(1, 8, size=length)  # 1-7
         policies = rng.random((length, 7), dtype=np.float32)
-        values = rng.integers(-1, 2, size=length)  # -1,0,1
+        values = rng.random((length, 2), dtype=np.float32)
         builder.add_trajectory(actions, policies, values)
     builder.save(str(root), split, shuffle=shuffle)
     orig_actions = [builder.actions[i] for i in range(len(builder.actions))]
@@ -130,7 +130,7 @@ def test_dataloader_batching(custom_dataset, batch_size, workers):
         actions, policies, values = batch
         assert actions.shape == (batch_size, block_size)
         assert policies.shape == (batch_size, block_size, 7)
-        assert values.shape == (batch_size, block_size)
+        assert values.shape == (batch_size, block_size, 2)
 
         all_actions.append(actions)
         all_policies.append(policies)

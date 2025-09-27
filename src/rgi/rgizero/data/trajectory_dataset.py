@@ -15,7 +15,7 @@ import warnings
 from torch.utils.data import Dataset, DataLoader
 
 from dataclasses import dataclass
-from typing import Iterable, Any
+from typing import Any, Sequence
 
 
 @dataclass
@@ -25,42 +25,41 @@ class TrajectoryTuple:
     value: torch.Tensor
 
 
+# Token can be any hashable type? Restrict to `str | int` for now.
+Token = str | int
+
+
 @dataclass
 class Vocab:
     """Vocabulary helper with encode/decode and file (de)serialization."""
 
     vocab_size: int
-    itos: list[str]
-    stoi: dict[str, int]
+    itos: Sequence[Token]
+    stoi: dict[Token, int]
 
-    def __init__(self, vocab_size: int, itos: list[str] | None = None, stoi: dict[str, int] | None = None):
-        assert vocab_size > 0, "Vocab size must be greater than 0"
-        if itos is None:
-            if stoi is None:
-                stoi = {str(i): i for i in range(vocab_size)}
-            itos = [str(i) for i in range(vocab_size)]
-        assert len(itos) == vocab_size, f"itos must have {vocab_size} items"
+    def __init__(self, itos: Sequence[Token]):
+        stoi = {token: idx for idx, token in enumerate(itos)}
 
-        if stoi is None:
-            stoi = {token: idx for idx, token in enumerate(itos)}
-        assert len(stoi) == vocab_size, f"stoi must have {vocab_size} items"
-
-        self.vocab_size = vocab_size
-        self.itos = list(itos)
-        self.stoi = dict(stoi)
+        self.itos = itos
+        self.stoi = stoi
+        self.vocab_size = len(itos)
 
     @classmethod
     def from_dict(cls, meta: dict) -> "Vocab":
-        return cls(meta["vocab_size"], meta.get("itos"), meta.get("stoi"))
+        itos: Sequence[Token] = meta.get("itos")  # type: ignore
+        return Vocab(itos)
 
     def to_dict(self) -> dict:
         return {"vocab_size": self.vocab_size, "itos": self.itos, "stoi": self.stoi}
 
-    def encode(self, tokens: Iterable[str]) -> list[int]:
+    def encode(self, tokens: Sequence[Token]) -> Sequence[int]:
         return [self.stoi[token] for token in tokens]
 
-    def decode(self, indices: Iterable[int]) -> str:
-        return "".join(self.itos[idx] for idx in indices)
+    def decode(self, indices: Sequence[int]) -> Sequence[Token]:
+        return [self.itos[idx] for idx in indices]
+
+    def decode_str(self, indices: Sequence[int]) -> str:
+        return "".join(str(token) for token in self.decode(indices))
 
 
 class TrajectoryDatasetBuilder:
@@ -81,9 +80,15 @@ class TrajectoryDatasetBuilder:
 
     def add_trajectory(self, actions: np.ndarray, policies: np.ndarray, values: np.ndarray):
         """Add a trajectory to the dataset."""
-        assert actions.shape == values.shape
-        assert actions.shape[0] == policies.shape[0]
-        assert policies.shape[1] == self.vocab.vocab_size
+        assert actions.shape[0] == values.shape[0], (
+            f"actions.shape[0] != values.shape[0]: {actions.shape[0]} != {values.shape[0]}"
+        )
+        assert actions.shape[0] == policies.shape[0], (
+            f"actions.shape[0] != policies.shape[0]: {actions.shape[0]} != {policies.shape[0]}"
+        )
+        assert policies.shape[1] == (self.vocab.vocab_size), (
+            f"policies.shape[1] != vocab.vocab_size: {policies.shape[1]} != {self.vocab.vocab_size}"
+        )
         self.actions.append(actions)
         self.policies.append(policies)
         self.values.append(values)
@@ -179,13 +184,15 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
             action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
             policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
+            # TODO: value_data repeatedly stores the same value... we should just store it once per trajectory.
+            # For now, store per-step values to match tests and pad/truncate like actions/policies.
             value = torch.from_numpy(self.value_data[action_start_idx:action_end_idx])
 
         if apply_padding:
             pad_len = self.block_size - (action_end_idx - action_start_idx)
             action = torch.nn.functional.pad(action, (0, pad_len))
             policy = torch.nn.functional.pad(policy, (0, 0, 0, pad_len))
-            value = torch.nn.functional.pad(value, (0, pad_len))
+            value = torch.nn.functional.pad(value, (0, 0, 0, pad_len))
         return TrajectoryTuple(action, policy, value)
 
     def _read_vocab(self) -> Vocab:
