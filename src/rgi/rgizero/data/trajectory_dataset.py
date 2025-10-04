@@ -53,7 +53,7 @@ class Vocab:
         return {"vocab_size": self.vocab_size, "itos": self.itos, "stoi": self.stoi}
 
     def encode(self, tokens: Sequence[Token]) -> Sequence[int]:
-        return [self.stoi[token] for token in tokens]
+        return np.array([self.stoi[token] for token in tokens])
 
     def decode(self, indices: Sequence[int]) -> Sequence[Token]:
         return [self.itos[idx] for idx in indices]
@@ -81,13 +81,13 @@ class TrajectoryDatasetBuilder:
     def add_trajectory(self, actions: np.ndarray, policies: np.ndarray, values: np.ndarray):
         """Add a trajectory to the dataset."""
         assert actions.shape[0] == values.shape[0], (
-            f"actions.shape[0] != values.shape[0]: {actions.shape[0]} != {values.shape[0]}"
+            f"actions.shape[0] != values.shape[0]: {actions.shape}[0] != {values.shape}[0]"
         )
         assert actions.shape[0] == policies.shape[0], (
-            f"actions.shape[0] != policies.shape[0]: {actions.shape[0]} != {policies.shape[0]}"
+            f"actions.shape[0] != policies.shape[0]: {actions.shape}[0] != {policies.shape}[0]"
         )
         assert policies.shape[1] == (self.vocab.vocab_size), (
-            f"policies.shape[1] != vocab.vocab_size: {policies.shape[1]} != {self.vocab.vocab_size}"
+            f"policies.shape[1] != vocab.vocab_size: {policies.shape}[1] != {self.vocab.vocab_size}"
         )
         self.actions.append(actions)
         self.policies.append(policies)

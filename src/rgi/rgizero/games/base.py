@@ -34,8 +34,8 @@ class Game(ABC, Generic[TGameState, TAction]):
         """Return a sequence of all legal actions for the game state."""
 
     @abstractmethod
-    def all_actions(self) -> Sequence[TAction] | None:
-        """Optionally return a sequence of all possible actions in the game."""
+    def all_actions(self) -> Sequence[TAction]:
+        """Return a sequence of all possible actions in the game."""
 
     @abstractmethod
     def next_state(self, game_state: TGameState, action: TAction) -> TGameState:
