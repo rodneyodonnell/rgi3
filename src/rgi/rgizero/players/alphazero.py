@@ -25,12 +25,12 @@ from rgi.rgizero.players.base import Player, TGameState, TAction, ActionResult
 class NetworkEvaluatorResult:
     """Result of a network evaluation.
 
-    - policy: Array of policy probabilities for legal actions, shape: (num_legal_actions,)
-    - values: Array of value estimates for each player, in range (0, 1) and sum to 1, shape: (num_players,)
+    - legal_policy: Array of policy probabilities for legal actions, shape: (num_legal_actions,)
+    - player_values: Array of value estimates for each player, in range (0, 1) and sum to 1, shape: (num_players,)
     """
 
-    policy: np.ndarray
-    values: np.ndarray
+    legal_policy: np.ndarray
+    player_values: np.ndarray
 
 
 class NetworkEvaluator(Protocol):
@@ -70,28 +70,28 @@ class MCTSNode:
     def __init__(
         self,
         legal_actions: Sequence,
-        prior_policy: np.ndarray,
-        state_values: np.ndarray,
+        prior_legal_policy: np.ndarray,
+        prior_state_player_values: np.ndarray,
     ):
         """Initialize a new MCTS node.
 
         Args:
             legal_actions: List of legal actions from this state
-            prior_policy: Prior policy probabilities (same length as legal_actions)
-            state_values: Value estimates for all players [player1_value, player2_value, ...]
+            prior_legal_policy: Prior policy probabilities (same length as legal_actions)
+            prior_state_player_values: Value estimates for all players [player1_value, player2_value, ...]
         """
-        assert len(legal_actions) == len(prior_policy)
+        assert len(legal_actions) == len(prior_legal_policy)
 
         self.legal_actions = list(legal_actions)  # Actions available from this state
-        self.prior_policy = prior_policy.copy()  # P(s,a) - prior probabilities
-        self.state_values = state_values.copy()  # Initial value estimates for all players
-        self.num_players = len(state_values)
+        self.prior_legal_policy = prior_legal_policy.copy()  # P(s,a) - prior probabilities
+        self.prior_state_player_values = prior_state_player_values.copy()  # Initial value estimates for all players
+        self.num_players = len(prior_state_player_values)
 
         # Visit statistics, indexed by legal_action.
         num_actions = len(legal_actions)
-        self.visit_counts = np.zeros(num_actions, dtype=np.int32)  # N(s,a)
-        self.value_sums = np.zeros((num_actions, self.num_players), dtype=np.float32)  # W(s,a,p)
-        self.mean_values = np.zeros((num_actions, self.num_players), dtype=np.float32)  # Q(s,a,p)
+        self.legal_action_visit_counts = np.zeros(num_actions, dtype=np.int32)  # N(s,a)
+        self.sum_player_values = np.zeros((num_actions, self.num_players), dtype=np.float32)  # W(s,a,p)
+        self.mean_player_values = np.zeros((num_actions, self.num_players), dtype=np.float32)  # Q(s,a,p)
 
         # Child nodes - indexed same as actions
         self.children: list[MCTSNode | None] = [None] * len(legal_actions)
@@ -123,11 +123,11 @@ class MCTSNode:
         """
         # Exploitation: Q(s,a) for current player
         current_player_idx = current_player - 1  # Convert to 0-based
-        q_value = self.mean_values[action_idx, current_player_idx]
+        q_value = self.mean_player_values[action_idx, current_player_idx]
 
         # Exploration: U(s,a) = c_puct * P(s,a) * sqrt(N(s)) / (1 + N(s,a))
-        exploration_factor = math.sqrt(max(1, self.total_visits)) / (1 + self.visit_counts[action_idx])
-        exploration = c_puct * self.prior_policy[action_idx] * exploration_factor
+        exploration_factor = math.sqrt(max(1, self.total_visits)) / (1 + self.legal_action_visit_counts[action_idx])
+        exploration = c_puct * self.prior_legal_policy[action_idx] * exploration_factor
 
         return q_value + exploration
 
@@ -160,9 +160,11 @@ class MCTSNode:
             values: Value array for all players [player1_value, player2_value, ...]
         """
         assert len(values) == self.num_players
-        self.visit_counts[action_idx] += 1
-        self.value_sums[action_idx] += values
-        self.mean_values[action_idx] = self.value_sums[action_idx] / self.visit_counts[action_idx]
+        self.legal_action_visit_counts[action_idx] += 1
+        self.sum_player_values[action_idx] += values
+        self.mean_player_values[action_idx] = (
+            self.sum_player_values[action_idx] / self.legal_action_visit_counts[action_idx]
+        )
         self.total_visits += 1
 
 
@@ -171,9 +173,9 @@ class SearchResult:
     """Result of a search."""
 
     legal_actions: list[Any]  # legal actions, shape: (num_actions,)
-    visit_counts: np.ndarray  # visit count for next action, shape: (num_actions,)
-    mean_values: np.ndarray  # mean values for current player, shape: (num_actions,)
-    all_mean_values: np.ndarray  # mean values for all players, shape: (num_players, num_actions)
+    legal_action_visit_counts: np.ndarray  # visit count for next action, shape: (num_actions,)
+    current_player_mean_values: np.ndarray  # mean values for current player, shape: (num_actions,)
+    all_players_mean_values: np.ndarray  # mean values for all players, shape: (num_players, num_actions)
     stats: MCTSStats
 
 
@@ -229,16 +231,16 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         # Get legal actions and evaluate root state
         legal_actions = self.game.legal_actions(root_state)
         result = self.evaluator.evaluate(self.game, root_state, legal_actions)
-        policy = result.policy
-        values = result.values
+        legal_policy = result.legal_policy
+        player_values = result.player_values
 
         # Add Dirichlet noise to root if enabled
         if self.add_noise:
             noise = self.rng.dirichlet([self.noise_alpha] * len(legal_actions))
-            policy = (1 - self.noise_epsilon) * policy + self.noise_epsilon * noise
-            policy = policy / np.sum(policy)
+            legal_policy = (1 - self.noise_epsilon) * legal_policy + self.noise_epsilon * noise
+            legal_policy = legal_policy / np.sum(legal_policy)
 
-        root_node = MCTSNode(legal_actions, policy, values)
+        root_node = MCTSNode(legal_actions, legal_policy, player_values)
 
         # Run simulations
         for _ in range(self.simulations):
@@ -248,11 +250,15 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         # Return statistics from current player's perspective
         current_player = self.game.current_player_id(root_state)
         current_player_idx = current_player - 1
-        all_mean_values = root_node.mean_values.copy()
-        mean_values = all_mean_values[:, current_player_idx]
+        all_players_mean_values = root_node.mean_player_values.copy()
+        current_player_mean_values = all_players_mean_values[:, current_player_idx]
 
         return SearchResult(
-            legal_actions, root_node.visit_counts.astype(np.float32), mean_values, all_mean_values, stats
+            legal_actions,
+            root_node.legal_action_visit_counts.astype(np.float32),
+            current_player_mean_values,
+            all_players_mean_values,
+            stats,
         )
 
     def _simulate(self, state, node: MCTSNode, stats: MCTSStats, depth: int = 0):
@@ -291,20 +297,20 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             child_result = self.evaluator.evaluate(self.game, next_state, legal_actions)
 
             # Create child node with full value array
-            child_node = MCTSNode(legal_actions, child_result.policy, child_result.values)
+            child_node = MCTSNode(legal_actions, child_result.legal_policy, child_result.player_values)
             node.children[action_idx] = child_node
 
             # Backup full value array
-            node.backup(action_idx, child_result.values)
-            return child_result.values
+            node.backup(action_idx, child_result.player_values)
+            return child_result.player_values
         else:
             # Recursion: continue search in existing child
             child_node = node.children[action_idx]
-            values = self._simulate(next_state, child_node, stats, depth + 1)
+            player_values = self._simulate(next_state, child_node, stats, depth + 1)
 
             # Backup the full value array - no conversion needed
-            node.backup(action_idx, values)
-            return values
+            node.backup(action_idx, player_values)
+            return player_values
 
     def select_action(self, game_state: Any) -> ActionResult[Any]:
         """Player interface implementation."""
@@ -313,13 +319,13 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         # Convert visit counts to policy using temperature
         if self.temperature == 0:
             # Deterministic selection
-            action_idx = int(np.argmax(search_result.visit_counts))
-            policy = np.zeros_like(search_result.visit_counts, dtype=np.float32)
+            action_idx = int(np.argmax(search_result.legal_action_visit_counts))
+            policy = np.zeros_like(search_result.legal_action_visit_counts, dtype=np.float32)
             policy[action_idx] = 1.0
         else:
             # Stochastic selection with temperature
             epsilon = 1e-10
-            log_counts = np.log(search_result.visit_counts + epsilon)
+            log_counts = np.log(search_result.legal_action_visit_counts + epsilon)
             log_policy = log_counts / (self.temperature + epsilon)
             stable_log_policy = log_policy - np.max(log_policy)
             unnormalised_policy = np.exp(stable_log_policy)
@@ -330,10 +336,8 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         return ActionResult(
             action,
             {
-                "visits": search_result.visit_counts[action_idx],
-                "visit_counts": search_result.visit_counts,
-                "mean_value": search_result.mean_values[action_idx],
-                "mean_values": search_result.mean_values,
+                "legal_action_visit_counts": search_result.legal_action_visit_counts,
+                "current_player_mean_values": search_result.current_player_mean_values,
                 "policy": policy,
                 "temperature": self.temperature,
                 "legal_actions": search_result.legal_actions,

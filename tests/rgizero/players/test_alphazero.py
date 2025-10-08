@@ -47,13 +47,13 @@ class TestMCTSNode:
         node = MCTSNode(legal_actions, policy, values)
 
         assert node.legal_actions == [1, 2, 3]
-        assert np.allclose(node.prior_policy, [0.5, 0.3, 0.2])
-        assert np.allclose(node.state_values, [0.1, -0.1])
+        assert np.allclose(node.prior_legal_policy, [0.5, 0.3, 0.2])
+        assert np.allclose(node.prior_state_player_values, [0.1, -0.1])
         assert node.num_players == 2
         assert node.total_visits == 0
         assert len(node.children) == 3
-        assert node.value_sums.shape == (3, 2)  # 3 actions x 2 players
-        assert node.mean_values.shape == (3, 2)
+        assert node.sum_player_values.shape == (3, 2)  # 3 actions x 2 players
+        assert node.mean_player_values.shape == (3, 2)
         assert all(child is None for child in node.children)
 
     def test_node_initialization_size_mismatch(self):
@@ -99,7 +99,7 @@ class TestMCTSNode:
         value2_after = node.get_action_value(1, c_puct=1.0, current_player=1)
 
         # Action 1 now has high Q value and should overcome the prior difference
-        assert np.allclose(node.mean_values[1], [1.0, -1.0])
+        assert np.allclose(node.mean_player_values[1], [1.0, -1.0])
         # With high Q value, action 1 should now be preferred
         assert value2_after > value1_after
 
@@ -121,16 +121,16 @@ class TestMCTSNode:
 
         # Backup positive value
         node.backup(0, np.array([0.8, -0.8]))
-        assert node.visit_counts[0] == 1
-        assert np.allclose(node.value_sums[0], [0.8, -0.8])
-        assert np.allclose(node.mean_values[0], [0.8, -0.8])
+        assert node.legal_action_visit_counts[0] == 1
+        assert np.allclose(node.sum_player_values[0], [0.8, -0.8])
+        assert np.allclose(node.mean_player_values[0], [0.8, -0.8])
         assert node.total_visits == 1
 
         # Backup another value to same action
         node.backup(0, np.array([0.2, -0.2]))
-        assert node.visit_counts[0] == 2
-        assert np.allclose(node.value_sums[0], [1.0, -1.0])  # [0.8, -0.8] + [0.2, -0.2]
-        assert np.allclose(node.mean_values[0], [0.5, -0.5])  # [1.0, -1.0] / 2
+        assert node.legal_action_visit_counts[0] == 2
+        assert np.allclose(node.sum_player_values[0], [1.0, -1.0])  # [0.8, -0.8] + [0.2, -0.2]
+        assert np.allclose(node.mean_player_values[0], [0.5, -0.5])  # [1.0, -1.0] / 2
         assert node.total_visits == 2
 
 
@@ -159,10 +159,10 @@ class TestAlphazeroPlayer:
         search_result = agent.search(state)
 
         assert len(search_result.legal_actions) == 7
-        assert len(search_result.visit_counts) == 7
-        assert len(search_result.mean_values) == 7
+        assert len(search_result.legal_action_visit_counts) == 7
+        assert len(search_result.current_player_mean_values) == 7
         assert search_result.stats.simulations == 10
-        assert np.sum(search_result.visit_counts) == 10  # All simulations should be counted
+        assert np.sum(search_result.legal_action_visit_counts) == 10  # All simulations should be counted
 
     def test_temperature_effects(self):
         """Test temperature effects on action selection."""
@@ -240,8 +240,8 @@ class TestAlphazeroPlayer:
         center_indices = [2, 3, 4]  # 0-indexed for mean_values array
 
         # Either the selected action is in center, OR center actions got reasonable visits
-        center_visits = sum(result.info["visit_counts"][i] for i in center_indices)
-        total_visits = sum(result.info["visit_counts"])
+        center_visits = sum(result.info["legal_action_visit_counts"][i] for i in center_indices)
+        total_visits = sum(result.info["legal_action_visit_counts"])
         center_ratio = center_visits / total_visits if total_visits > 0 else 0
 
         # With our biased evaluator, center should get at least some visits
@@ -256,15 +256,22 @@ class TestAlphazeroPlayer:
         state = game.initial_state()
         result = agent.select_action(state)
 
-        required_keys = {"visit_counts", "mean_values", "policy", "temperature", "legal_actions", "stats"}
+        required_keys = {
+            "legal_action_visit_counts",
+            "current_player_mean_values",
+            "policy",
+            "temperature",
+            "legal_actions",
+            "stats",
+        }
         assert required_keys.issubset(result.info.keys())
 
         assert result.info["stats"].simulations == 15
         assert result.info["stats"].tree_depth == 1
         assert result.info["temperature"] == 0.8
         assert len(result.info["legal_actions"]) == 7
-        assert len(result.info["visit_counts"]) == 7
-        assert len(result.info["mean_values"]) == 7
+        assert len(result.info["legal_action_visit_counts"]) == 7
+        assert len(result.info["current_player_mean_values"]) == 7
         assert len(result.info["policy"]) == 7
         assert np.allclose(np.sum(result.info["policy"]), 1.0)  # Policy should sum to 1
 
@@ -333,14 +340,14 @@ class TestGameIntegration:
         state = game.initial_state()
 
         search_result = agent.search(state)
-        assert search_result.all_mean_values.shape == (7, 2)
+        assert search_result.all_players_mean_values.shape == (7, 2)
         assert np.allclose(
-            search_result.all_mean_values,
+            search_result.all_players_mean_values,
             np.array([[0.5, -0.5], [0.5, -0.5], [0.5, -0.5], [0.5, -0.5], [0.5, -0.5], [0.5, -0.5], [0.5, -0.5]]),
         )
 
-        assert len(search_result.mean_values) == 7
-        assert np.allclose(search_result.mean_values, np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]))
+        assert len(search_result.current_player_mean_values) == 7
+        assert np.allclose(search_result.current_player_mean_values, np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]))
 
     def test_multiplayer_value_arrays(self):
         """Test that multiplayer value arrays work correctly."""
@@ -362,11 +369,11 @@ class TestGameIntegration:
         search_result = agent.search(state)
 
         # Verify that MCTS ran and backed up some value
-        assert max(search_result.visit_counts) > 0, "MCTS should have visited at least one action"
+        assert max(search_result.legal_action_visit_counts) > 0, "MCTS should have visited at least one action"
 
         # The backed up values should be Player 1's values (0.8) from the child evaluations
-        visited_indices = np.where(search_result.visit_counts > 0)[0]
-        visited_q_values = search_result.mean_values[visited_indices]
+        visited_indices = np.where(search_result.legal_action_visit_counts > 0)[0]
+        visited_q_values = search_result.current_player_mean_values[visited_indices]
 
         # All visited Q-values should be 0.8 (Player 1's value from child states)
         for q_val in visited_q_values:
@@ -402,12 +409,12 @@ class TestGameIntegration:
         search_result = agent.search(state)
 
         # Find the action that was visited most (likely to have hit recursive case)
-        most_visited_idx = np.argmax(search_result.visit_counts)
-        most_visited_q = search_result.mean_values[most_visited_idx]
+        most_visited_idx = np.argmax(search_result.legal_action_visit_counts)
+        most_visited_q = search_result.current_player_mean_values[most_visited_idx]
 
         print(f"Most visited Q-value: {most_visited_q}")
         print(f"Evaluator calls: {call_count}")
-        print(f"Visit counts: {search_result.visit_counts}")
+        print(f"Visit counts: {search_result.legal_action_visit_counts}")
 
         # With the fix, all backup values should be Player 1's value (0.9)
         # regardless of whether they come from expansion or recursion
@@ -419,7 +426,9 @@ class TestGameIntegration:
         )
 
         # All simulations hit the same action, so we should have consistent backups
-        assert search_result.visit_counts[most_visited_idx] == 10, "Expected all simulations to hit the same action"
+        assert search_result.legal_action_visit_counts[most_visited_idx] == 10, (
+            "Expected all simulations to hit the same action"
+        )
 
 
 if __name__ == "__main__":
