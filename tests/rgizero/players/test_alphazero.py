@@ -77,32 +77,6 @@ class TestMCTSNode:
         with pytest.raises(ValueError):
             node.action_to_index(99)
 
-    def test_puct_values(self):
-        """Test PUCT value calculation."""
-        legal_actions = [1, 2]
-        policy = np.array([0.7, 0.3])
-        node = MCTSNode(legal_actions, policy, np.array([0.0, 0.0]))
-
-        # No visits yet - should be driven by priors
-        value1 = node.get_action_value(0, c_puct=1.0, current_player=1)
-        value2 = node.get_action_value(1, c_puct=1.0, current_player=1)
-
-        # Action 0 has higher prior, so should have higher value
-        assert value1 > value2
-
-        # Add some visits to action 1 with a high value
-        node.backup(1, np.array([1.0, -1.0]))  # High positive value for player 1
-        node.backup(1, np.array([1.0, -1.0]))  # Another high value
-
-        # Now action 1 should have higher total value (Q + U)
-        value1_after = node.get_action_value(0, c_puct=1.0, current_player=1)
-        value2_after = node.get_action_value(1, c_puct=1.0, current_player=1)
-
-        # Action 1 now has high Q value and should overcome the prior difference
-        assert np.allclose(node.mean_player_values[1], [1.0, -1.0])
-        # With high Q value, action 1 should now be preferred
-        assert value2_after > value1_after
-
     def test_action_selection(self):
         """Test action selection using PUCT."""
         legal_actions = [1, 2, 3]

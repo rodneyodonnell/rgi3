@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
 import numpy as np
+from numba import jit
 
 from rgi.rgizero.games.base import Game
 from rgi.rgizero.players.base import Player, TGameState, TAction, ActionResult
@@ -42,6 +43,7 @@ class NetworkEvaluator(Protocol):
         Args:
             game: The game instance
             state: The game state to evaluate
+            legal_actions: The legal actions for the state
 
         Returns NetworkEvaluatorResult
         """
@@ -110,26 +112,29 @@ class MCTSNode:
         """Check if an action has been expanded (has a child node)."""
         return self.children[action_idx] is not None
 
-    def get_action_value(self, action_idx: int, c_puct: float, current_player: int) -> float:
-        """Calculate PUCT value for an action.
-
-        Args:
-            action_idx: Index of the action in legal_actions
-            c_puct: PUCT exploration constant
-            current_player: Current player (1-based)
-
-        Returns:
-            PUCT value combining exploitation (Q) and exploration (U)
-        """
+    @staticmethod
+    @jit(nopython=True)
+    def _numba_select_action_index(
+        c_puct: float,
+        current_player: int,
+        mean_player_values: np.ndarray,
+        prior_legal_policy: np.ndarray,
+        legal_action_visit_counts: np.ndarray,
+        total_visits: int,
+    ) -> int:
         # Exploitation: Q(s,a) for current player
-        current_player_idx = current_player - 1  # Convert to 0-based
-        q_value = self.mean_player_values[action_idx, current_player_idx]
+        current_player_idx = current_player - 1
+        q_values = mean_player_values[:, current_player_idx]
 
         # Exploration: U(s,a) = c_puct * P(s,a) * sqrt(N(s)) / (1 + N(s,a))
-        exploration_factor = math.sqrt(max(1, self.total_visits)) / (1 + self.legal_action_visit_counts[action_idx])
-        exploration = c_puct * self.prior_legal_policy[action_idx] * exploration_factor
+        total_visits_sqrt = math.sqrt(max(1, total_visits))
+        exploration_factor = total_visits_sqrt / (1 + legal_action_visit_counts)
+        exploration = c_puct * prior_legal_policy * exploration_factor
 
-        return q_value + exploration
+        puct_values = q_values + exploration
+        best_idx = np.argmax(puct_values)
+
+        return best_idx  # type: ignore
 
     def select_action_index(self, c_puct: float, current_player: int) -> int:
         """Select best action index using PUCT rule.
@@ -141,16 +146,14 @@ class MCTSNode:
         Returns:
             Index of selected action in legal_actions
         """
-        best_value = float("-inf")
-        best_idx = 0
-
-        for action_idx in range(len(self.legal_actions)):
-            value = self.get_action_value(action_idx, c_puct, current_player)
-            if value > best_value:
-                best_value = value
-                best_idx = action_idx
-
-        return best_idx
+        return self._numba_select_action_index(
+            c_puct,
+            current_player,
+            self.mean_player_values,
+            self.prior_legal_policy,
+            self.legal_action_visit_counts,
+            self.total_visits,
+        )
 
     def backup(self, action_idx: int, values: np.ndarray):
         """Update statistics after a simulation.
