@@ -179,8 +179,8 @@ class TestAlphazeroPlayer:
         result_hot = agent_hot.select_action(state)
         result_cold = agent_cold.select_action(state)
 
-        policy_hot = result_hot.info["policy"]
-        policy_cold = result_cold.info["policy"]
+        policy_hot = result_hot.info["legal_policy"]
+        policy_cold = result_cold.info["legal_policy"]
 
         # Hot policy should be more uniform (higher entropy)
         entropy_hot = -np.sum(policy_hot * np.log(policy_hot + 1e-8))
@@ -209,8 +209,8 @@ class TestAlphazeroPlayer:
         result_with_noise = agent_with_noise.select_action(state)
 
         # With noise, the policy should be less concentrated
-        policy_no_noise = result_no_noise.info["policy"]
-        policy_with_noise = result_with_noise.info["policy"]
+        policy_no_noise = result_no_noise.info["legal_policy"]
+        policy_with_noise = result_with_noise.info["legal_policy"]
 
         # The max probability should be lower with noise
         assert np.max(policy_with_noise) < np.max(policy_no_noise)
@@ -259,7 +259,7 @@ class TestAlphazeroPlayer:
         required_keys = {
             "legal_action_visit_counts",
             "current_player_mean_values",
-            "policy",
+            "legal_policy",
             "temperature",
             "legal_actions",
             "stats",
@@ -272,8 +272,8 @@ class TestAlphazeroPlayer:
         assert len(result.info["legal_actions"]) == 7
         assert len(result.info["legal_action_visit_counts"]) == 7
         assert len(result.info["current_player_mean_values"]) == 7
-        assert len(result.info["policy"]) == 7
-        assert np.allclose(np.sum(result.info["policy"]), 1.0)  # Policy should sum to 1
+        assert len(result.info["legal_policy"]) == 7
+        assert np.allclose(np.sum(result.info["legal_policy"]), 1.0)  # Policy should sum to 1
 
 
 class TestGameIntegration:

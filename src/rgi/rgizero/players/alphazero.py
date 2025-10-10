@@ -320,8 +320,8 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         if self.temperature == 0:
             # Deterministic selection
             action_idx = int(np.argmax(search_result.legal_action_visit_counts))
-            policy = np.zeros_like(search_result.legal_action_visit_counts, dtype=np.float32)
-            policy[action_idx] = 1.0
+            legal_policy = np.zeros_like(search_result.legal_action_visit_counts, dtype=np.float32)
+            legal_policy[action_idx] = 1.0
         else:
             # Stochastic selection with temperature
             epsilon = 1e-10
@@ -329,8 +329,8 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             log_policy = log_counts / (self.temperature + epsilon)
             stable_log_policy = log_policy - np.max(log_policy)
             unnormalised_policy = np.exp(stable_log_policy)
-            policy = unnormalised_policy / np.sum(unnormalised_policy)
-            action_idx = self.rng.choice(len(policy), p=policy)
+            legal_policy = unnormalised_policy / np.sum(unnormalised_policy)
+            action_idx = self.rng.choice(len(legal_policy), p=legal_policy)
 
         action = search_result.legal_actions[action_idx]
         return ActionResult(
@@ -338,7 +338,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             {
                 "legal_action_visit_counts": search_result.legal_action_visit_counts,
                 "current_player_mean_values": search_result.current_player_mean_values,
-                "policy": policy,
+                "legal_policy": legal_policy,
                 "temperature": self.temperature,
                 "legal_actions": search_result.legal_actions,
                 "stats": search_result.stats,
@@ -359,7 +359,7 @@ def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_actions
     """
     state = game.initial_state()
     action_history = []
-    policies = []
+    legal_policies = []
     legal_action_idx_list = []
 
     all_actions = game.all_actions()
@@ -372,7 +372,7 @@ def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_actions
 
         result = agent.select_action(state)
         action_history.append(result.action)
-        policies.append(result.info["policy"])
+        legal_policies.append(result.info["legal_policy"])
         legal_actions = result.info["legal_actions"]
         legal_action_idx = np.array([all_action_idx_map[action] for action in legal_actions])
         legal_action_idx_list.append(legal_action_idx)
@@ -396,7 +396,7 @@ def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_actions
         "winner": winner,
         "rewards": rewards,
         "action_history": action_history,
-        "policies": policies,
+        "legal_policies": legal_policies,
         "final_state": state,
         "legal_action_idx": legal_action_idx_list,
     }

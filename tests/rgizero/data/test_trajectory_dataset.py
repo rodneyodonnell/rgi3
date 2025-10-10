@@ -38,7 +38,7 @@ def write_random_trajectory_dataset(
         builder.add_trajectory(actions, policies, values)
     builder.save(str(root), split, shuffle=shuffle)
     orig_actions = [builder.actions[i] for i in range(len(builder.actions))]
-    orig_policies = [builder.policies[i] for i in range(len(builder.policies))]
+    orig_policies = [builder.fixed_width_policies[i] for i in range(len(builder.fixed_width_policies))]
     orig_values = [builder.values[i] for i in range(len(builder.values))]
 
     return TrajectoryDatasetFixture(root, split, orig_actions, orig_policies, orig_values)

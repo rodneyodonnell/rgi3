@@ -74,23 +74,23 @@ class TrajectoryDatasetBuilder:
 
     def __init__(self, vocab: Vocab):
         self.actions: list[np.ndarray] = []
-        self.policies: list[np.ndarray] = []
+        self.fixed_width_policies: list[np.ndarray] = []
         self.values: list[np.ndarray] = []
         self.vocab = vocab
 
-    def add_trajectory(self, actions: np.ndarray, policies: np.ndarray, values: np.ndarray):
+    def add_trajectory(self, actions: np.ndarray, fixed_width_policies: np.ndarray, values: np.ndarray):
         """Add a trajectory to the dataset."""
         assert actions.shape[0] == values.shape[0], (
             f"actions.shape[0] != values.shape[0]: {actions.shape}[0] != {values.shape}[0]"
         )
-        assert actions.shape[0] == policies.shape[0], (
-            f"actions.shape[0] != policies.shape[0]: {actions.shape}[0] != {policies.shape}[0]"
+        assert actions.shape[0] == fixed_width_policies.shape[0], (
+            f"actions.shape[0] != policies.shape[0]: {actions.shape}[0] != {fixed_width_policies.shape}[0]"
         )
-        assert policies.shape[1] == (self.vocab.vocab_size), (
-            f"policies.shape[1] != vocab.vocab_size: {policies.shape}[1] != {self.vocab.vocab_size}"
+        assert fixed_width_policies.shape[1] == (self.vocab.vocab_size), (
+            f"policies.shape[1] != vocab.vocab_size: {fixed_width_policies.shape}[1] != {self.vocab.vocab_size}"
         )
         self.actions.append(actions)
-        self.policies.append(policies)
+        self.fixed_width_policies.append(fixed_width_policies)
         self.values.append(values)
 
     def save(self, root_dir: str, split: str, shuffle: bool = True):
@@ -106,7 +106,7 @@ class TrajectoryDatasetBuilder:
             # shuffle in builder so we don't need to do it in DataLoader.
             indices = np.random.permutation(len(self.actions))
             self.actions = [self.actions[i] for i in indices]
-            self.policies = [self.policies[i] for i in indices]
+            self.fixed_width_policies = [self.fixed_width_policies[i] for i in indices]
             self.values = [self.values[i] for i in indices]
 
         action_lengths = [len(action) for action in self.actions]
@@ -116,7 +116,7 @@ class TrajectoryDatasetBuilder:
 
         # Save data
         np.save(split_dir / "action.npy", np.concatenate(self.actions))
-        np.save(split_dir / "policy.npy", np.concatenate(self.policies))
+        np.save(split_dir / "policy.npy", np.concatenate(self.fixed_width_policies))
         np.save(split_dir / "value.npy", np.concatenate(self.values))
         np.save(split_dir / "boundaries.npy", boundaries.astype(np.int64))
 
