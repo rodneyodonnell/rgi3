@@ -63,57 +63,18 @@ class Connect4Game(Game[GameState, Action]):
     @override
     def next_state(self, game_state: GameState, action: Action) -> GameState:
         """Find the lowest empty row in the selected column and return the updated game state."""
-        column = action - 1
-        if not (0 <= column < self.width and game_state.board[0, column] == 0):
-            raise ValueError(f"Invalid move: Column {action} is full or out of bounds.")
-
-        row = np.nonzero(game_state.board[:, column] == 0)[0][-1]
-
-        new_board = game_state.board.copy()
-        new_board[row, column] = game_state.current_player
-
-        winner = self._calculate_winner(new_board, column, row, game_state.current_player)
-        is_terminal = (winner is not None) or self._calculate_is_board_full(new_board)
-        next_player: PlayerId = 2 if game_state.current_player == 1 else 1
+        new_board, next_player, is_terminal, winner = _numba_next_state(
+            game_state.board, action, game_state.current_player, self.height, self.width, self.connect_length
+        )
 
         return GameState(board=new_board, current_player=next_player, is_terminal=is_terminal, winner=winner)
 
     def _calculate_winner(self, board: NDArray[np.int8], col: int, row: int, player: PlayerId) -> PlayerId | None:
         """Check if the last move made at (row, col) by 'player' wins the game."""
-        return self._numba_calculate_winner(board, col, row, player, self.height, self.width, self.connect_length)
+        return _numba_calculate_winner(board, col, row, player, self.height, self.width, self.connect_length)
 
     def _calculate_is_board_full(self, board: NDArray[np.int8]) -> bool:
-        return self._numba_calculate_is_board_full(board)
-
-    @staticmethod
-    @jit(nopython=True)
-    def _numba_calculate_winner(
-        board: NDArray[np.int8], col: int, row: int, player: PlayerId, height: int, width: int, connect_length: int
-    ) -> PlayerId | None:
-        """Check if the last move made at (row, col) by 'player' wins the game."""
-        directions = [
-            (0, 1),  # Horizontal
-            (1, 0),  # Vertical
-            (1, 1),  # Diagonal /
-            (1, -1),  # Diagonal \
-        ]
-
-        for dr, dc in directions:
-            count = 1
-            for factor in [-1, 1]:
-                r, c = row + dr * factor, col + dc * factor
-                while 0 <= r < height and 0 <= c < width and board[r, c] == player:
-                    count += 1
-                    r, c = r + dr * factor, c + dc * factor
-                    if count >= connect_length:
-                        return player
-
-        return None
-
-    @staticmethod
-    @jit(nopython=True)
-    def _numba_calculate_is_board_full(board: NDArray[np.int8]) -> bool:
-        return np.all(board != 0).item()
+        return _numba_calculate_is_board_full(board)
 
     @override
     def is_terminal(self, game_state: GameState) -> bool:
@@ -155,3 +116,59 @@ class Connect4Game(Game[GameState, Action]):
                     board[r, c] = 2  # Player 2
         # TODO: Handle terminal & final states properly...
         return GameState(board=board, current_player=current_player, is_terminal=False, winner=None)
+
+
+@jit(nopython=True)
+def _numba_next_state(
+    board: NDArray[np.int8],
+    action: int,
+    current_player: PlayerId,
+    height: int,
+    width: int,
+    connect_length: int,
+) -> tuple[NDArray[np.int8], PlayerId, bool, PlayerId | None]:
+    """Find the lowest empty row in the selected column and return the updated game state."""
+    column = action - 1
+    if not (0 <= column < width and board[0, column] == 0):
+        raise ValueError(f"Invalid move: Column {action} is full or out of bounds.")
+
+    row = np.nonzero(board[:, column] == 0)[0][-1]
+
+    new_board = board.copy()
+    new_board[row, column] = current_player
+
+    winner = _numba_calculate_winner(new_board, column, row, current_player, height, width, connect_length)
+    is_terminal = (winner is not None) or _numba_calculate_is_board_full(new_board)
+    next_player: PlayerId = 2 if current_player == 1 else 1
+
+    return new_board, next_player, is_terminal, winner
+
+
+@jit(nopython=True)
+def _numba_calculate_winner(
+    board: NDArray[np.int8], col: int, row: int, player: PlayerId, height: int, width: int, connect_length: int
+) -> PlayerId | None:
+    """Check if the last move made at (row, col) by 'player' wins the game."""
+    directions = [
+        (0, 1),  # Horizontal
+        (1, 0),  # Vertical
+        (1, 1),  # Diagonal /
+        (1, -1),  # Diagonal \
+    ]
+
+    for dr, dc in directions:
+        count = 1
+        for factor in [-1, 1]:
+            r, c = row + dr * factor, col + dc * factor
+            while 0 <= r < height and 0 <= c < width and board[r, c] == player:
+                count += 1
+                r, c = r + dr * factor, c + dc * factor
+                if count >= connect_length:
+                    return player
+
+    return None
+
+
+@jit(nopython=True)
+def _numba_calculate_is_board_full(board: NDArray[np.int8]) -> bool:
+    return np.all(board != 0).item()
