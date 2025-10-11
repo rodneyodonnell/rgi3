@@ -63,10 +63,10 @@ class Connect4Game(Game[GameState, Action]):
     @override
     def next_state(self, game_state: GameState, action: Action) -> GameState:
         """Find the lowest empty row in the selected column and return the updated game state."""
-        if action not in (legal_actions := self.legal_actions(game_state)):
-            raise ValueError(f"Invalid move: Invalid column '{action}' not in {legal_actions}")
+        column = action - 1
+        if not (0 <= column < self.width and game_state.board[0, column] == 0):
+            raise ValueError(f"Invalid move: Column {action} is full or out of bounds.")
 
-        column = action - 1  # Convert 1-based action to 0-based column index
         row = np.nonzero(game_state.board[:, column] == 0)[0][-1]
 
         new_board = game_state.board.copy()

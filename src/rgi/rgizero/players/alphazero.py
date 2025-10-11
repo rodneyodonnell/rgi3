@@ -155,6 +155,24 @@ class MCTSNode:
             self.total_visits,
         )
 
+    @staticmethod
+    @jit(nopython=True)
+    def _numba_backup(
+        action_idx: int,
+        values: np.ndarray,
+        num_players: int,
+        legal_action_visit_counts: np.ndarray,
+        sum_player_values: np.ndarray,
+        mean_player_values: np.ndarray,
+        total_visits: int,
+    ):
+        assert len(values) == num_players
+        legal_action_visit_counts[action_idx] += 1
+        sum_player_values[action_idx] += values
+        mean_player_values[action_idx] = sum_player_values[action_idx] / legal_action_visit_counts[action_idx]
+        total_visits += 1
+        return total_visits
+
     def backup(self, action_idx: int, values: np.ndarray):
         """Update statistics after a simulation.
 
@@ -162,13 +180,15 @@ class MCTSNode:
             action_idx: Index of action that was taken
             values: Value array for all players [player1_value, player2_value, ...]
         """
-        assert len(values) == self.num_players
-        self.legal_action_visit_counts[action_idx] += 1
-        self.sum_player_values[action_idx] += values
-        self.mean_player_values[action_idx] = (
-            self.sum_player_values[action_idx] / self.legal_action_visit_counts[action_idx]
+        self.total_visits = self._numba_backup(
+            action_idx,
+            values,
+            self.num_players,
+            self.legal_action_visit_counts,
+            self.sum_player_values,
+            self.mean_player_values,
+            self.total_visits,
         )
-        self.total_visits += 1
 
 
 @dataclass
