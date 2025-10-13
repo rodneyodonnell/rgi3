@@ -1,10 +1,13 @@
 import pytest
 import torch
+import numpy as np
 
-from rgi.rgizero.models.action_history_transformer import (
-    ActionHistoryTransformer,
-)
+from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer, ActionHistoryTransformerEvaluator
 from rgi.rgizero.models.transformer import TransformerConfig
+from rgi.rgizero.games.connect4 import Connect4Game
+from rgi.rgizero.games.history_wrapper import HistoryTrackingGame
+from rgi.rgizero.data.trajectory_dataset import Vocab
+from rgi.rgizero.common import TOKENS
 
 
 @pytest.fixture
@@ -13,10 +16,29 @@ def transformer_config():
 
 
 @pytest.fixture
-def action_history_transformer(transformer_config):
-    action_vocab_size = 5
+def vocab(game):
+    return Vocab(itos=[TOKENS.START_OF_GAME] + list(game.base_game.all_actions()))
+
+
+@pytest.fixture
+def action_history_transformer(transformer_config, vocab):
+    action_vocab_size = vocab.vocab_size
     num_players = 2
     return ActionHistoryTransformer(transformer_config, action_vocab_size, num_players)
+
+
+@pytest.fixture
+def game():
+    return HistoryTrackingGame(Connect4Game(connect_length=5))
+
+
+@pytest.fixture
+def action_history_transformer_evaluator(action_history_transformer, vocab):
+    device = "cpu"
+    n_max_context = action_history_transformer.config.n_max_context
+    return ActionHistoryTransformerEvaluator(
+        action_history_transformer, device=device, block_size=n_max_context, vocab=vocab
+    )
 
 
 class TestActionHistoryTransformer:
@@ -83,3 +105,41 @@ class TestActionHistoryTransformer:
         assert policy_logits.shape == (batch_size, vocab_size)
         assert value_logits.shape == (batch_size, num_players)
         assert loss is None
+
+
+class TestActionHistoryTransformerEvaluator:
+    def test_evaluate(self, action_history_transformer_evaluator, game):
+        evaluator = action_history_transformer_evaluator
+        state = game.initial_state()
+        legal_actions = game.legal_actions(state)
+
+        result = evaluator.evaluate(game, state, legal_actions)
+
+        assert result.legal_policy.shape == (len(legal_actions),)
+        assert result.player_values.shape == (game.num_players(state),)
+        assert np.isclose(np.sum(result.legal_policy), 1.0)
+        assert result.legal_policy.dtype == np.float32
+        assert result.player_values.dtype == np.float32
+
+    def test_evaluate_batch(self, action_history_transformer_evaluator, game):
+        evaluator = action_history_transformer_evaluator
+
+        num_states = 4
+        states = []
+        legal_actions_list = []
+        state = game.initial_state()
+        for _ in range(num_states):
+            states.append(state)
+            legal_actions_list.append(game.legal_actions(state))
+            action = game.all_actions()[0]  # Take a dummy action to advance state
+            state = game.next_state(state, action)
+
+        results = evaluator.evaluate_batch(states, legal_actions_list)
+
+        assert len(results) == num_states
+        for i, result in enumerate(results):
+            assert result.legal_policy.shape == (len(legal_actions_list[i]),)
+            assert result.player_values.shape == (game.num_players(states[i]),)
+            assert np.isclose(np.sum(result.legal_policy), 1.0)
+            assert result.legal_policy.dtype == np.float32
+            assert result.player_values.dtype == np.float32
