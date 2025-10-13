@@ -122,6 +122,13 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     def evaluate(self, game, state, legal_actions) -> NetworkEvaluatorResult:
         return self.evaluate_batch([state], [legal_actions])[0]
 
+    def _maybe_pin(self, tensor):
+        """Pin memory if on GPU."""
+        # Only pin on GPU. Pinning on CPU raises an error about CUDA drivers not being available.
+        if self.device == "cuda":
+            return tensor.pin_memory()
+        return tensor
+
     @torch.inference_mode()
     def evaluate_batch(self, states_list, legal_actions_list):
         B = len(states_list)
@@ -132,7 +139,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         for i, state in enumerate(states_list):
             encoded_row = self.vocab.encode(state.action_history)[-self.block_size :]
             x_np[i, L - len(encoded_row) :] = encoded_row
-        x_pinned = torch.from_numpy(x_np).pin_memory()
+        x_pinned = self._maybe_pin(torch.from_numpy(x_np))
 
         # Process model on GPU.
         x_gpu = x_pinned.to(self.device, non_blocking=True)
@@ -143,7 +150,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         for i, legal_actions in enumerate(legal_actions_list):
             legal_idx = np.array([self.vocab.stoi[a] for a in legal_actions], dtype=np.int32)
             legal_policy_mask_np[i, legal_idx] = True
-        legal_policy_mask_pinned = torch.from_numpy(legal_policy_mask_np).pin_memory()
+        legal_policy_mask_pinned = self._maybe_pin(torch.from_numpy(legal_policy_mask_np))
 
         # Process masked softmax on GPU
         legal_policy_mask_gpu = legal_policy_mask_pinned.to(self.device, non_blocking=True)
