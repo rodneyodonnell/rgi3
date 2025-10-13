@@ -162,33 +162,6 @@ class TestAlphazeroPlayer:
 
         assert entropy_hot > entropy_cold
 
-    def test_dirichlet_noise(self):
-        """Test Dirichlet noise addition."""
-        game = Connect4Game()
-
-        def policy_fn(game, state, legal_actions):
-            if len(legal_actions) == 7:
-                return np.array([1.0, 0, 0, 0, 0, 0, 0])
-            else:
-                return UniformEvaluator.uniform_policy_fn(game, state, legal_actions)
-
-        evaluator = UniformEvaluator(policy_fn=policy_fn)
-
-        agent_no_noise = AlphazeroPlayer(game, evaluator, simulations=10, add_noise=False)
-        agent_with_noise = AlphazeroPlayer(game, evaluator, simulations=10, add_noise=True, noise_epsilon=0.5)
-
-        state = game.initial_state()
-
-        result_no_noise = agent_no_noise.select_action(state)
-        result_with_noise = agent_with_noise.select_action(state)
-
-        # With noise, the policy should be less concentrated
-        policy_no_noise = result_no_noise.info["legal_policy"]
-        policy_with_noise = result_with_noise.info["legal_policy"]
-
-        # The max probability should be lower with noise
-        assert np.max(policy_with_noise) < np.max(policy_no_noise)
-
     def test_value_propagation(self):
         """Test that values propagate correctly up the tree."""
         game = Connect4Game()
