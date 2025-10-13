@@ -120,25 +120,45 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     @override
     @torch.no_grad()
     def evaluate(self, game, state, legal_actions) -> NetworkEvaluatorResult:
-        action_history = state.action_history
-        history_tokens = self.vocab.encode(action_history)
+        return self.evaluate_batch([state], [legal_actions])[0]
 
-        # action_history tokens already in [0..7]; we feed last block_size tokens
-        x = torch.tensor(history_tokens[-self.block_size :], dtype=torch.long, device=self.device)[None, :]
-        # simple pad-left with zeros (new_game tokens) if needed
-        if x.size(1) < self.block_size:
-            pad = torch.zeros((1, self.block_size - x.size(1)), dtype=torch.long, device=self.device)
-            x = torch.cat([pad, x], dim=1)
-        (policy_logits, value_logits), _ = self.model(x)
-        # policy for next move: softmax over vocab (8)
-        policy = F.softmax(policy_logits[0], dim=-1)
-        # value: expectation over {-1,0,1}
-        val_probs = F.softmax(value_logits[0], dim=-1)
-        value = val_probs * 2 - 1  # Convert from probabilities to [-1,1] domain.
+    @torch.inference_mode()
+    def evaluate_batch(self, states_list, legal_actions_list):
+        B = len(states_list)
+        L = self.block_size
 
-        policy_np = policy.cpu().numpy()
-        value_np = value.cpu().numpy()
-        legal_policy_idx = np.array([self.vocab.stoi[a] for a in legal_actions])
-        legal_policy = policy_np[legal_policy_idx]
+        # Start with zeros to simplify padding.
+        x_np = np.zeros((B, L), dtype=np.int32)
+        for i, state in enumerate(states_list):
+            encoded_row = self.vocab.encode(state.action_history)[-self.block_size :]
+            x_np[i, L - len(encoded_row) :] = encoded_row
+        x_pinned = torch.from_numpy(x_np).pin_memory()
 
-        return NetworkEvaluatorResult(legal_policy, value_np)
+        # Process model on GPU.
+        x_gpu = x_pinned.to(self.device, non_blocking=True)
+        (policy_logits_gpu, value_logits_gpu), _ = self.model(x_gpu)
+
+        # Calculate legal_policy_mask on CPU
+        legal_policy_mask_np = np.zeros(policy_logits_gpu.shape, dtype=np.bool_)
+        for i, legal_actions in enumerate(legal_actions_list):
+            legal_idx = np.array([self.vocab.stoi[a] for a in legal_actions], dtype=np.int32)
+            legal_policy_mask_np[i, legal_idx] = True
+        legal_policy_mask_pinned = torch.from_numpy(legal_policy_mask_np).pin_memory()
+
+        # Process masked softmax on GPU
+        legal_policy_mask_gpu = legal_policy_mask_pinned.to(self.device, non_blocking=True)
+        masked_policy_logits_gpu = policy_logits_gpu.masked_fill(~legal_policy_mask_gpu, float("-inf"))
+
+        policy = F.softmax(masked_policy_logits_gpu, dim=-1)  # [B, V]
+        val_probs = F.softmax(value_logits_gpu, dim=-1)  # [B, 3]
+        value = val_probs * 2 - 1  # map to [-1, 1]
+
+        # Blocks waiting for GPU to complete.
+        policy_np_batch = policy.cpu().numpy()
+        value_np_batch = value.cpu().numpy()
+
+        ret = [None] * len(states_list)
+        for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_policy_mask_np)):
+            legal_policy = policy_np[mask]
+            ret[i] = NetworkEvaluatorResult(legal_policy, value_np)
+        return ret
