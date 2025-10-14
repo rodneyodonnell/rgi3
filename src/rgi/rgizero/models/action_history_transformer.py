@@ -2,7 +2,14 @@
 Multitask transformer from action-histyry to Policy and Value heads.
 """
 
-from typing import override, Optional
+from typing import override, Optional, Any
+import time
+import threading
+import queue
+from concurrent.futures import Future
+from dataclasses import dataclass
+import asyncio
+from collections import deque
 
 import numpy as np
 import torch
@@ -169,3 +176,152 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
             legal_policy = policy_np[mask]
             ret[i] = NetworkEvaluatorResult(legal_policy, value_np)
         return ret
+
+
+@dataclass
+class EvalReq:
+    state: Any
+    legal_actions: list[Any]
+    future: Future
+
+
+class QueuedNetworkEvaluator(NetworkEvaluator):
+    def __init__(
+        self,
+        base_evaluator: ActionHistoryTransformerEvaluator,
+        max_batch_size=1024,
+        max_latency_ms=1,
+        auto_start=True,
+    ):
+        self.evaluator = base_evaluator
+        self.max_batch_size = max_batch_size
+        self.max_latency_ms = max_latency_ms
+        self.queue: queue.Queue[EvalReq] = queue.Queue()
+        self._stop = threading.Event()
+        self._thread = None
+        if auto_start:
+            self.start()
+
+    @override
+    def evaluate(self, game, state: Any, legal_actions: list[Any]) -> NetworkEvaluatorResult:
+        future = Future()
+        self.queue.put(EvalReq(state, legal_actions, future))
+        return future.result()
+
+    def start(self):
+        self._thread = threading.Thread(target=self.run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def run(self):
+        while not self._stop.is_set():
+            batch = self._collect()
+            if batch:
+                self._run_once(batch)
+
+    def _collect(self) -> list[EvalReq]:
+        batch = []
+        start = time.perf_counter()
+
+        # block for first item
+        item = self.queue.get()
+        batch.append(item)
+
+        # Fill batch to capacity.
+        # Only stop when 'batch is full', or 'queue is empty AND timeout elapsed'
+        while len(batch) < self.max_batch_size:
+            remain = self.max_latency_ms / 1000 - (time.perf_counter() - start)
+            try:
+                batch.append(self.queue.get(timeout=max(0, remain)))
+            except queue.Empty:
+                break
+        return batch
+
+    def _run_once(self, batch: list[EvalReq]):
+        states = [r.state for r in batch]
+        legal = [r.legal_actions for r in batch]
+        try:
+            outs = self.evaluator.evaluate_batch(states, legal)
+            for r, out in zip(batch, outs):
+                r.future.set_result(out)
+        except Exception as e:
+            for r in batch:
+                r.future.set_exception(e)
+
+
+@dataclass
+class AsyncEvalReq:
+    state: Any
+    legal_actions: list[Any]
+    future: asyncio.Future
+
+
+class AsyncNetworkEvaluator(NetworkEvaluator):
+    def __init__(
+        self,
+        base_evaluator: ActionHistoryTransformerEvaluator,
+        max_batch_size: int = 1024,
+    ):
+        self.evaluator = base_evaluator
+        self.max_batch_size = max_batch_size
+        self.queue: asyncio.Queue[AsyncEvalReq] = asyncio.Queue()
+        self._worker_task: Optional[asyncio.Task] = None
+        self._stopping = False
+
+    async def start(self):
+        if self._worker_task is None or self._worker_task.done():
+            self._stopping = False
+            self._worker_task = asyncio.create_task(self._worker_run())
+
+    async def stop(self):
+        self._stopping = True
+        if self._worker_task:
+            await self.queue.put(AsyncEvalReq(None, [], asyncio.Future()))  # Sentinel to wake up worker
+            await self._worker_task
+            self._worker_task = None
+
+    async def _worker_run(self):
+        batch_deque: deque[AsyncEvalReq] = deque()
+        while not self._stopping:
+            # Block waiting for first item.
+            item = await self.queue.get()
+            if item.state is None and item.legal_actions == []:  # Sentinel check
+                break
+            batch_deque.append(item)
+
+            # Collect more items until max_batch_size or queue empty
+            while len(batch_deque) < self.max_batch_size:
+                try:
+                    item = self.queue.get_nowait()
+                    if item.state is None and item.legal_actions == []:  # Sentinel check
+                        self.queue.put_nowait(item)  # Put back for proper stop
+                        break
+                    batch_deque.append(item)
+                except asyncio.QueueEmpty:
+                    break
+
+            if batch_deque:  # Process the batch if not empty
+                batch_list = list(batch_deque)
+                batch_deque.clear()
+                await asyncio.to_thread(self._run_once, batch_list)
+
+    def _run_once(self, batch: list[AsyncEvalReq]):
+        states = [r.state for r in batch]
+        legal_actions = [r.legal_actions for r in batch]
+        try:
+            outs = self.evaluator.evaluate_batch(states, legal_actions)
+            for req, out in zip(batch, outs):
+                req.future.set_result(out)
+        except Exception as e:
+            for req in batch:
+                req.future.set_exception(e)
+
+    @override
+    async def evaluate(self, game, state: Any, legal_actions: list[Any]) -> NetworkEvaluatorResult:
+        future = asyncio.Future()
+        await self.queue.put(AsyncEvalReq(state, legal_actions, future))
+        return await future
