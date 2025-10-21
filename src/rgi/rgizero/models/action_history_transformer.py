@@ -278,10 +278,8 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
         self._worker_task: Optional[asyncio.Task] = None
         self._stopping = False
         self.verbose = verbose
-        if start:
-            self.start()
 
-    def start(self):
+    async def start(self):
         if self._worker_task is None or self._worker_task.done():
             self._stopping = False
             self._worker_task = asyncio.create_task(self._worker_run())
@@ -334,6 +332,8 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
 
     @override
     async def evaluate_async(self, game, state: Any, legal_actions: list[Any]) -> NetworkEvaluatorResult:
+        if self._worker_task is None:
+            raise RuntimeError(f"{self.__class__.__name__} worker not running. Missing `await evaluator.start()`?")
         future = asyncio.Future()
         await self.queue.put(AsyncEvalReq(state, legal_actions, future))
         result = await future
