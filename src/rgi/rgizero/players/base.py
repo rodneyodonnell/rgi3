@@ -30,3 +30,6 @@ class Player(ABC, Generic[TGameState, TAction]):
         Returns:
             ActionResult containing the selected action and optional data
         """
+
+    async def select_action_async(self, game_state: TGameState) -> ActionResult[TAction]:
+        return self.select_action(game_state)

@@ -13,6 +13,7 @@ Algorithm Overview:
 
 import math
 from dataclasses import dataclass
+import asyncio
 from typing import Any, Protocol, Sequence
 
 import numpy as np
@@ -48,6 +49,9 @@ class NetworkEvaluator(Protocol):
         Returns NetworkEvaluatorResult
         """
         ...
+
+    async def evaluate_async(self, game: Game, state, legal_actions: list[Any]) -> NetworkEvaluatorResult:
+        return self.evaluate(game, state, legal_actions)
 
 
 @dataclass
@@ -240,7 +244,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         self.noise_epsilon = noise_epsilon
         self.rng = rng or np.random.default_rng()
 
-    def search(self, root_state) -> SearchResult:
+    async def search_async(self, root_state) -> SearchResult:
         """Run MCTS search from root state.
 
         Args:
@@ -253,7 +257,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
         # Get legal actions and evaluate root state
         legal_actions = self.game.legal_actions(root_state)
-        result = self.evaluator.evaluate(self.game, root_state, legal_actions)
+        result = await self.evaluator.evaluate_async(self.game, root_state, legal_actions)
         legal_policy = result.legal_policy
         player_values = result.player_values
 
@@ -267,7 +271,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
         # Run simulations
         for _ in range(self.simulations):
-            self._simulate(root_state, root_node, stats)
+            await self._simulate_async(root_state, root_node, stats)
             stats.simulations += 1
 
         # Return statistics from current player's perspective
@@ -284,7 +288,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             stats,
         )
 
-    def _simulate(self, state, node: MCTSNode, stats: MCTSStats, depth: int = 0):
+    async def _simulate_async(self, state, node: MCTSNode, stats: MCTSStats, depth: int = 0):
         """Run a single MCTS simulation.
 
         Args:
@@ -317,7 +321,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         if not node.is_expanded(action_idx):
             # Expansion: create new child node
             legal_actions = self.game.legal_actions(next_state)
-            child_result = self.evaluator.evaluate(self.game, next_state, legal_actions)
+            child_result = await self.evaluator.evaluate_async(self.game, next_state, legal_actions)
 
             # Create child node with full value array
             child_node = MCTSNode(legal_actions, child_result.legal_policy, child_result.player_values)
@@ -329,7 +333,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         else:
             # Recursion: continue search in existing child
             child_node = node.children[action_idx]
-            player_values = self._simulate(next_state, child_node, stats, depth + 1)
+            player_values = await self._simulate_async(next_state, child_node, stats, depth + 1)
 
             # Backup the full value array - no conversion needed
             node.backup(action_idx, player_values)
@@ -337,8 +341,11 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
     def select_action(self, game_state: Any) -> ActionResult[Any]:
         """Player interface implementation."""
-        search_result = self.search(game_state)
+        return asyncio.get_event_loop().run_until_complete(self.select_action_async(game_state))
 
+    async def select_action_async(self, game_state: Any) -> ActionResult[Any]:
+        """Player interface implementation."""
+        search_result = await self.search_async(game_state)
         # Convert visit counts to policy using temperature
         if self.temperature == 0:
             # Deterministic selection
@@ -394,6 +401,62 @@ def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_actions
         agent = agents[current_player - 1]  # Convert to 0-based indexing
 
         result = agent.select_action(state)
+        action_history.append(result.action)
+        legal_policies.append(result.info["legal_policy"])
+        legal_actions = result.info["legal_actions"]
+        legal_action_idx = np.array([all_action_idx_map[action] for action in legal_actions])
+        legal_action_idx_list.append(legal_action_idx)
+
+        state = game.next_state(state, result.action)
+        num_actions += 1
+
+    # Determine outcome
+    rewards = game.reward_array(state)
+    if game.is_terminal(state):
+        winner = None
+        rewards = game.reward_array(state)
+        for player_id, reward in zip(game.player_ids(state), rewards):
+            if reward >= 1.0:
+                winner = player_id
+    else:
+        # Max moves reached - declare draw
+        winner = None
+
+    return {
+        "winner": winner,
+        "rewards": rewards,
+        "action_history": action_history,
+        "legal_policies": legal_policies,
+        "final_state": state,
+        "legal_action_idx": legal_action_idx_list,
+    }
+
+
+async def play_game_async(game: Game, agents: list[Player[TGameState, TAction]], max_actions: int = 1000) -> dict:
+    """Play a complete game between MCTS agents.
+
+    Args:
+        game: Game instance
+        agents: List of MCTS agents (one per player)
+        max_moves: Maximum number of moves before declaring draw
+
+    Returns:
+        Dictionary with game outcome and statistics
+    """
+    state = game.initial_state()
+    action_history = []
+    legal_policies = []
+    legal_action_idx_list = []
+
+    all_actions = game.all_actions()
+    all_action_idx_map = {action: idx for idx, action in enumerate(all_actions)}
+
+    num_actions = 0
+    while not game.is_terminal(state) and num_actions < max_actions:
+        current_player = game.current_player_id(state)
+        agent = agents[current_player - 1]  # Convert to 0-based indexing
+
+        result = await agent.select_action_async(state)
         action_history.append(result.action)
         legal_policies.append(result.info["legal_policy"])
         legal_actions = result.info["legal_actions"]

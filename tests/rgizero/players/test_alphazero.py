@@ -3,6 +3,7 @@ Unit tests for AlphaZero MCTS implementation.
 """
 
 from typing import override
+import asyncio
 
 import numpy as np
 import pytest
@@ -130,7 +131,7 @@ class TestAlphazeroPlayer:
         agent = AlphazeroPlayer(game, evaluator, simulations=10)
 
         state = game.initial_state()
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
 
         assert len(search_result.legal_actions) == 7
         assert len(search_result.legal_action_visit_counts) == 7
@@ -286,7 +287,7 @@ class TestGameIntegration:
 
         state = game.initial_state()
 
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
         assert search_result.all_players_mean_values.shape == (7, 2)
         assert np.allclose(
             search_result.all_players_mean_values,
@@ -313,7 +314,7 @@ class TestGameIntegration:
         assert game.current_player_id(state) == 1
 
         # Run search - this should backup Player 1's value from child states
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
 
         # Verify that MCTS ran and backed up some value
         assert max(search_result.legal_action_visit_counts) > 0, "MCTS should have visited at least one action"
@@ -353,7 +354,7 @@ class TestGameIntegration:
         assert game.current_player_id(state) == 1  # Player 1's turn
 
         # Run search - this will hit the same action multiple times (recursive case)
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
 
         # Find the action that was visited most (likely to have hit recursive case)
         most_visited_idx = np.argmax(search_result.legal_action_visit_counts)
