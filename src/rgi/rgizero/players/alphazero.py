@@ -48,10 +48,15 @@ class NetworkEvaluator(Protocol):
 
         Returns NetworkEvaluatorResult
         """
-        ...
+        raise NotImplementedError("Subclasses must implement this method")
 
     async def evaluate_async(self, game: Game, state, legal_actions: list[Any]) -> NetworkEvaluatorResult:
         return self.evaluate(game, state, legal_actions)
+
+    def evaluate_batch(
+        self, game: Game, states: list[Any], legal_actions: list[list[Any]]
+    ) -> list[NetworkEvaluatorResult]:
+        return [self.evaluate(game, state, legal_actions) for state, legal_actions in zip(states, legal_actions)]
 
 
 @dataclass
@@ -341,7 +346,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
     def select_action(self, game_state: Any) -> ActionResult[Any]:
         """Player interface implementation."""
-        return asyncio.get_event_loop().run_until_complete(self.select_action_async(game_state))
+        return asyncio.run(self.select_action_async(game_state))
 
     async def select_action_async(self, game_state: Any) -> ActionResult[Any]:
         """Player interface implementation."""
