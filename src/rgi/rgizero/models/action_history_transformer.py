@@ -127,7 +127,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     @override
     @torch.no_grad()
     def evaluate(self, game, state, legal_actions) -> NetworkEvaluatorResult:
-        return self.evaluate_batch([state], [legal_actions])[0]
+        return self.evaluate_batch(game, [state], [legal_actions])[0]
 
     def _maybe_pin(self, tensor):
         """Pin memory if on GPU."""
@@ -136,8 +136,9 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
             return tensor.pin_memory()
         return tensor
 
+    @override
     @torch.inference_mode()
-    def evaluate_batch(self, states_list, legal_actions_list):
+    def evaluate_batch(self, game, states_list, legal_actions_list):
         B = len(states_list)
         L = self.block_size
 
@@ -192,10 +193,12 @@ class QueuedNetworkEvaluator(NetworkEvaluator):
         max_batch_size=1024,
         max_latency_ms=1,
         auto_start=True,
+        verbose=False,
     ):
         self.evaluator = base_evaluator
         self.max_batch_size = max_batch_size
         self.max_latency_ms = max_latency_ms
+        self.verbose = verbose
         self.queue: queue.Queue[EvalReq] = queue.Queue()
         self._stop = threading.Event()
         self._thread = None
@@ -242,6 +245,8 @@ class QueuedNetworkEvaluator(NetworkEvaluator):
         return batch
 
     def _run_once(self, batch: list[EvalReq]):
+        if self.verbose:
+            print(f"QueuedNetworkEvaluator._run_once, batch_size={len(batch)}")
         states = [r.state for r in batch]
         legal = [r.legal_actions for r in batch]
         try:
@@ -255,6 +260,7 @@ class QueuedNetworkEvaluator(NetworkEvaluator):
 
 @dataclass
 class AsyncEvalReq:
+    game: Any
     state: Any
     legal_actions: list[Any]
     future: asyncio.Future
@@ -263,14 +269,17 @@ class AsyncEvalReq:
 class AsyncNetworkEvaluator(NetworkEvaluator):
     def __init__(
         self,
-        base_evaluator: ActionHistoryTransformerEvaluator,
+        base_evaluator: NetworkEvaluator,
         max_batch_size: int = 1024,
+        start=False,
+        verbose=False,
     ):
         self.evaluator = base_evaluator
         self.max_batch_size = max_batch_size
         self.queue: asyncio.Queue[AsyncEvalReq] = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
         self._stopping = False
+        self.verbose = verbose
 
     async def start(self):
         if self._worker_task is None or self._worker_task.done():
@@ -280,7 +289,7 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
     async def stop(self):
         self._stopping = True
         if self._worker_task:
-            await self.queue.put(AsyncEvalReq(None, [], asyncio.Future()))  # Sentinel to wake up worker
+            await self.queue.put(AsyncEvalReq(None, None, [], asyncio.Future()))  # Sentinel to wake up worker
             await self._worker_task
             self._worker_task = None
 
@@ -312,8 +321,12 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
     def _run_once(self, batch: list[AsyncEvalReq]):
         states = [r.state for r in batch]
         legal_actions = [r.legal_actions for r in batch]
+        game = batch[0].game
+        if self.verbose:
+            print(f"batch size: {len(batch)}")
+
         try:
-            outs = self.evaluator.evaluate_batch(states, legal_actions)
+            outs = self.evaluator.evaluate_batch(game, states, legal_actions)
             for req, out in zip(batch, outs):
                 req.future.set_result(out)
         except Exception as e:
@@ -321,7 +334,10 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
                 req.future.set_exception(e)
 
     @override
-    async def evaluate(self, game, state: Any, legal_actions: list[Any]) -> NetworkEvaluatorResult:
+    async def evaluate_async(self, game, state: Any, legal_actions: list[Any]) -> NetworkEvaluatorResult:
+        if self._worker_task is None:
+            raise RuntimeError(f"{self.__class__.__name__} worker not running. Missing `await evaluator.start()`?")
         future = asyncio.Future()
-        await self.queue.put(AsyncEvalReq(state, legal_actions, future))
-        return await future
+        await self.queue.put(AsyncEvalReq(game, state, legal_actions, future))
+        result = await future
+        return result

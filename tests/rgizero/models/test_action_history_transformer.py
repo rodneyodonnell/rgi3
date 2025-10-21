@@ -134,7 +134,7 @@ class TestActionHistoryTransformerEvaluator:
             action = game.all_actions()[0]  # Take a dummy action to advance state
             state = game.next_state(state, action)
 
-        results = evaluator.evaluate_batch(states, legal_actions_list)
+        results = evaluator.evaluate_batch(game, states, legal_actions_list)
 
         assert len(results) == num_states
         for i, result in enumerate(results):

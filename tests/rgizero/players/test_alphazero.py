@@ -3,6 +3,7 @@ Unit tests for AlphaZero MCTS implementation.
 """
 
 from typing import override
+import asyncio
 
 import numpy as np
 import pytest
@@ -10,6 +11,9 @@ import pytest
 from rgi.rgizero.games.connect4 import Connect4Game
 from rgi.rgizero.players.alphazero import AlphazeroPlayer, MCTSNode
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
+from rgi.rgizero.players.alphazero import ActionResult, MCTSStats
+from rgi.rgizero.games.history_wrapper import HistoryTrackingGame
+from rgi.rgizero.models.action_history_transformer import AsyncNetworkEvaluator
 
 
 class UniformEvaluator(NetworkEvaluator):
@@ -130,7 +134,7 @@ class TestAlphazeroPlayer:
         agent = AlphazeroPlayer(game, evaluator, simulations=10)
 
         state = game.initial_state()
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
 
         assert len(search_result.legal_actions) == 7
         assert len(search_result.legal_action_visit_counts) == 7
@@ -286,7 +290,7 @@ class TestGameIntegration:
 
         state = game.initial_state()
 
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
         assert search_result.all_players_mean_values.shape == (7, 2)
         assert np.allclose(
             search_result.all_players_mean_values,
@@ -313,7 +317,7 @@ class TestGameIntegration:
         assert game.current_player_id(state) == 1
 
         # Run search - this should backup Player 1's value from child states
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
 
         # Verify that MCTS ran and backed up some value
         assert max(search_result.legal_action_visit_counts) > 0, "MCTS should have visited at least one action"
@@ -353,7 +357,7 @@ class TestGameIntegration:
         assert game.current_player_id(state) == 1  # Player 1's turn
 
         # Run search - this will hit the same action multiple times (recursive case)
-        search_result = agent.search(state)
+        search_result = asyncio.run(agent.search_async(state))
 
         # Find the action that was visited most (likely to have hit recursive case)
         most_visited_idx = np.argmax(search_result.legal_action_visit_counts)
@@ -376,6 +380,67 @@ class TestGameIntegration:
         assert search_result.legal_action_visit_counts[most_visited_idx] == 10, (
             "Expected all simulations to hit the same action"
         )
+
+
+@pytest.fixture
+def game():
+    return HistoryTrackingGame(Connect4Game(connect_length=5))
+
+
+@pytest.fixture
+def async_evaluator_factory():
+    # Required by: https://docs.pytest.org/en/stable/deprecations.html#sync-test-depending-on-async-fixture
+    async def _async_evaluator():
+        async_evaluator = AsyncNetworkEvaluator(base_evaluator=UniformEvaluator())
+        await async_evaluator.start()
+        return async_evaluator
+
+    return _async_evaluator
+
+
+class TestAsyncPlayer:
+    @pytest.mark.asyncio
+    async def test_select_action_async(self, game, async_evaluator_factory):
+        agent = AlphazeroPlayer(game, await async_evaluator_factory(), simulations=10)
+        state = game.initial_state()
+        result = await agent.select_action_async(state)
+        assert isinstance(result, ActionResult)
+        assert result.action in game.legal_actions(state)
+        assert "legal_policy" in result.info
+        assert len(result.info["legal_policy"]) == 7
+
+    @pytest.mark.asyncio
+    async def test_search_async(self, game, async_evaluator_factory):
+        agent = AlphazeroPlayer(game, await async_evaluator_factory(), simulations=10)
+        state = game.initial_state()
+        search_result = await agent.search_async(state)
+        assert len(search_result.legal_actions) == 7
+        assert search_result.legal_action_visit_counts.shape == (7,)
+        assert np.sum(search_result.legal_action_visit_counts) == 10
+        assert search_result.current_player_mean_values.shape == (7,)
+        assert search_result.all_players_mean_values.shape == (7, 2)
+        assert search_result.stats.simulations == 10
+
+    @pytest.mark.asyncio
+    async def test_async_concurrency(self, game, async_evaluator_factory):
+        # Test that multiple concurrent simulations handle expansion correctly
+        agent = AlphazeroPlayer(game, await async_evaluator_factory(), simulations=1)  # Minimal simulations to control
+        state = game.initial_state()
+
+        # Force a scenario where multiple tasks try to expand the same node
+        root_node = MCTSNode(agent.game.legal_actions(state), np.ones(7) / 7, np.zeros(2))
+
+        async def sim():
+            return await agent._simulate_async(state, root_node, MCTSStats())
+
+        # Run multiple simulations in parallel
+        tasks = [asyncio.create_task(sim()) for _ in range(5)]
+        results = await asyncio.gather(*tasks)
+
+        # Verify only one expansion happened, others waited
+        assert all(np.array_equal(r, results[0]) for r in results)  # All got same value
+        assert sum(1 for child in root_node.children if child is not None) == 1  # Only one child expanded
+        assert root_node.total_visits == 5  # All backups happened
 
 
 if __name__ == "__main__":
