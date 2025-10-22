@@ -181,6 +181,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
 
 @dataclass
 class EvalReq:
+    game: Any
     state: Any
     legal_actions: list[Any]
     future: Future
@@ -208,7 +209,7 @@ class QueuedNetworkEvaluator(NetworkEvaluator):
     @override
     def evaluate(self, game, state: Any, legal_actions: list[Any]) -> NetworkEvaluatorResult:
         future = Future()
-        self.queue.put(EvalReq(state, legal_actions, future))
+        self.queue.put(EvalReq(game, state, legal_actions, future))
         return future.result()
 
     def start(self):
@@ -249,8 +250,9 @@ class QueuedNetworkEvaluator(NetworkEvaluator):
             print(f"QueuedNetworkEvaluator._run_once, batch_size={len(batch)}")
         states = [r.state for r in batch]
         legal = [r.legal_actions for r in batch]
+        game = batch[0].game
         try:
-            outs = self.evaluator.evaluate_batch(states, legal)
+            outs = self.evaluator.evaluate_batch(game, states, legal)
             for r, out in zip(batch, outs):
                 r.future.set_result(out)
         except Exception as e:
