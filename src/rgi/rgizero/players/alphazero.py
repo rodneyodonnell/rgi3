@@ -285,7 +285,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
         # Run simulations
         required_simulations = self.simulations - root_node.total_visits
-        print(f"Running {required_simulations} simulations (previous total visits: {root_node.total_visits})")
+        # print(f"Running {required_simulations} simulations (previous total visits: {root_node.total_visits})")
         for _ in range(required_simulations):
             await self._simulate_async(root_state, root_node, stats)
             stats.simulations += 1
@@ -362,6 +362,11 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
     async def select_action_async(self, game_state: Any) -> ActionResult[Any]:
         """Player interface implementation."""
+
+        # We only support history tracking games for now.
+        has_history_tracking = hasattr(game_state, "action_history")
+        if not has_history_tracking:
+            raise ValueError("Game state is not a history tracking game state")
 
         if not self.tree_cache.is_initialized():
             root_node = await self._create_root_node_async(game_state)
