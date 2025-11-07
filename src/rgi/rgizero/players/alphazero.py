@@ -209,6 +209,7 @@ class SearchResult:
     current_player_mean_values: np.ndarray  # mean values for current player, shape: (num_actions,)
     all_players_mean_values: np.ndarray  # mean values for all players, shape: (num_players, num_actions)
     stats: MCTSStats
+    root_node: MCTSNode
 
 
 class AlphazeroPlayer(Player[TGameState, TAction]):
@@ -247,9 +248,20 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         self.add_noise = add_noise
         self.noise_alpha = noise_alpha
         self.noise_epsilon = noise_epsilon
+        self.tree_cache = IncrementalTreeCache()
         self.rng = rng or np.random.default_rng()
 
-    async def search_async(self, root_state) -> SearchResult:
+    async def _create_root_node_async(self, root_state: TGameState) -> MCTSNode:
+        # Get legal actions and evaluate root state
+        legal_actions = self.game.legal_actions(root_state)
+        result = await self.evaluator.evaluate_async(self.game, root_state, legal_actions)
+        legal_policy = result.legal_policy
+        player_values = result.player_values
+        root_node = MCTSNode(legal_actions, legal_policy, player_values)
+
+        return root_node
+
+    async def search_async(self, root_state, root_node: MCTSNode | None = None) -> SearchResult:
         """Run MCTS search from root state.
 
         Args:
@@ -259,23 +271,22 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             Tuple of (legal_actions, visit_counts, mean_values, stats)
         """
         stats = MCTSStats()
-
-        # Get legal actions and evaluate root state
-        legal_actions = self.game.legal_actions(root_state)
-        result = await self.evaluator.evaluate_async(self.game, root_state, legal_actions)
-        legal_policy = result.legal_policy
-        player_values = result.player_values
+        if root_node is None:
+            root_node = await self._create_root_node_async(root_state)
 
         # Add Dirichlet noise to root if enabled
         if self.add_noise:
-            noise = self.rng.dirichlet([self.noise_alpha] * len(legal_actions))
-            legal_policy = (1 - self.noise_epsilon) * legal_policy + self.noise_epsilon * noise
-            legal_policy = legal_policy / np.sum(legal_policy)
-
-        root_node = MCTSNode(legal_actions, legal_policy, player_values)
+            noise = self.rng.dirichlet([self.noise_alpha] * len(root_node.prior_legal_policy))
+            unnormalised_legal_policy = (
+                1 - self.noise_epsilon
+            ) * root_node.prior_legal_policy + self.noise_epsilon * noise
+            legal_policy = unnormalised_legal_policy / np.sum(unnormalised_legal_policy)
+            root_node.prior_legal_policy = legal_policy
 
         # Run simulations
-        for _ in range(self.simulations):
+        required_simulations = self.simulations - root_node.total_visits
+        print(f"Running {required_simulations} simulations (previous total visits: {root_node.total_visits})")
+        for _ in range(required_simulations):
             await self._simulate_async(root_state, root_node, stats)
             stats.simulations += 1
 
@@ -286,11 +297,12 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         current_player_mean_values = all_players_mean_values[:, current_player_idx]
 
         return SearchResult(
-            legal_actions,
+            root_node.legal_actions,
             root_node.legal_action_visit_counts.astype(np.float32),
             current_player_mean_values,
             all_players_mean_values,
             stats,
+            root_node,
         )
 
     async def _simulate_async(self, state, node: MCTSNode, stats: MCTSStats, depth: int = 0):
@@ -350,7 +362,14 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
     async def select_action_async(self, game_state: Any) -> ActionResult[Any]:
         """Player interface implementation."""
-        search_result = await self.search_async(game_state)
+
+        if not self.tree_cache.is_initialized():
+            root_node = await self._create_root_node_async(game_state)
+            self.tree_cache.set_incremental_tree(root_node, game_state.action_history)
+        else:
+            root_node = self.tree_cache.get_tree(game_state.action_history, update=True)
+
+        search_result = await self.search_async(game_state, root_node=root_node)
         # Convert visit counts to policy using temperature
         if self.temperature == 0:
             # Deterministic selection
@@ -377,6 +396,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
                 "temperature": self.temperature,
                 "legal_actions": search_result.legal_actions,
                 "stats": search_result.stats,
+                "current_root_node": search_result.root_node,
             },
         )
 
@@ -437,7 +457,11 @@ def play_game(game: Game, agents: list[Player[TGameState, TAction]], max_actions
     }
 
 
-async def play_game_async(game: Game, agents: list[Player[TGameState, TAction]], max_actions: int = 1000) -> dict:
+async def play_game_async(
+    game: Game,
+    agents: list[Player[TGameState, TAction]],
+    max_actions: int = 1000,
+) -> dict:
     """Play a complete game between MCTS agents.
 
     Args:
@@ -491,3 +515,43 @@ async def play_game_async(game: Game, agents: list[Player[TGameState, TAction]],
         "final_state": state,
         "legal_action_idx": legal_action_idx_list,
     }
+
+
+@dataclass
+class IncrementalTreeCache:
+    """Cache for incremental lookup of MCTS trees."""
+
+    _tree: MCTSNode | None = None
+    _trajectory: list[Any] | None = None
+
+    def is_initialized(self) -> bool:
+        return self._tree is not None
+
+    def set_incremental_tree(self, tree: MCTSNode, trajectory: list[Any]):
+        self._tree = tree
+        self._trajectory = trajectory
+
+    def _get_tree(self, tree: MCTSNode, start_idx: int, trajectory: list[Any]) -> MCTSNode:
+        node = tree
+        for i, action in enumerate(trajectory[start_idx:], start=start_idx):
+            action_idx = node.action_to_index(action)
+            node = node.children[action_idx]
+            if node is None:
+                raise ValueError(f"Action {action} not found in tree for trajectory {trajectory} at index {i}")
+        return node
+
+    def get_tree(self, trajectory: list[Any], update: bool = False) -> MCTSNode:
+        """Lookup and optionally update incremental tree. Raises ValueError on trajectory mismatch or subtree not found."""
+        if self._tree is None:
+            raise ValueError("Incremental tree not set")
+        if trajectory[: len(self._trajectory)] != self._trajectory:
+            raise ValueError(
+                f"Incremental trajectory mismatch, stored trajectory: {self._trajectory}, not prefix of requested trajectory: {trajectory}"
+            )
+        if len(trajectory) == len(self._trajectory):
+            return self._tree
+
+        ret = self._get_tree(self._tree, len(self._trajectory), trajectory)
+        if update:
+            self.set_incremental_tree(ret, trajectory)
+        return ret
