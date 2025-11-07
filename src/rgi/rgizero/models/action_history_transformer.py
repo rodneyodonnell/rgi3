@@ -273,7 +273,6 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
         self,
         base_evaluator: NetworkEvaluator,
         max_batch_size: int = 1024,
-        start=False,
         verbose=False,
     ):
         self.evaluator = base_evaluator
