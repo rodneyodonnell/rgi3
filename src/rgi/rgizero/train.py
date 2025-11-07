@@ -101,9 +101,9 @@ class Trainer:
             data_iter = iter(loader)
             losses = torch.zeros(self.train_config.eval_iters)
             for k in range(self.train_config.eval_iters):
-                X, Y = next(data_iter)
+                data_batch = next(data_iter)
                 with self.ctx:
-                    logits, loss = self.model(X, Y)
+                    logits, loss = self.model(*data_batch)
                 losses[k] = loss.item()
             out[split] = losses.mean()
 
@@ -170,8 +170,8 @@ class Trainer:
             # and using the GradScaler if data type is float16
             for micro_step in range(self.train_config.gradient_accumulation_steps):
                 with self.ctx:
-                    batch_id, (X, Y) = next(data_iter)
-                    logits, loss = self.model(X, Y)
+                    batch_id, data_batch = next(data_iter)
+                    logits, loss = self.model(data_batch)
                     loss = (
                         loss / self.train_config.gradient_accumulation_steps
                     )  # scale the loss to account for gradient accumulation
