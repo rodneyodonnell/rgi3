@@ -14,6 +14,7 @@ from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResu
 from rgi.rgizero.players.alphazero import ActionResult, MCTSStats
 from rgi.rgizero.games.history_wrapper import HistoryTrackingGame
 from rgi.rgizero.models.action_history_transformer import AsyncNetworkEvaluator
+from rgi.rgizero.players.alphazero import IncrementalTreeCache
 
 
 class UniformEvaluator(NetworkEvaluator):
@@ -144,7 +145,7 @@ class TestAlphazeroPlayer:
 
     def test_temperature_effects(self):
         """Test temperature effects on action selection."""
-        game = Connect4Game()
+        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator()
 
         # High temperature should be more uniform
@@ -168,12 +169,12 @@ class TestAlphazeroPlayer:
 
     def test_value_propagation(self):
         """Test that values propagate correctly up the tree."""
-        game = Connect4Game()
+        game = HistoryTrackingGame(Connect4Game())
 
         # Mock evaluator that returns different values for different states
         def mock_values_fn(game_obj, state, legal_actions):
             # Return higher values for states with pieces in center columns
-            center_pieces = np.sum(state.board[:, 2:5])
+            center_pieces = np.sum(state.base_state.board[:, 2:5])
             value = 0.1 * center_pieces  # Prefer center play
             num_players = game_obj.num_players(state)
             return np.full(num_players, value, dtype=np.float32)
@@ -200,7 +201,7 @@ class TestAlphazeroPlayer:
 
     def test_info_dict_contents(self):
         """Test that info dict contains expected information."""
-        game = Connect4Game()
+        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator()
         agent = AlphazeroPlayer(game, evaluator, simulations=15, temperature=0.8)
 
@@ -240,7 +241,7 @@ class TestGameIntegration:
                 return np.array([0.1, 0.15, 0.2, 0.3, 0.2, 0.15, 0.1])
             return UniformEvaluator.uniform_policy_fn(game, state, legal_actions)
 
-        game = Connect4Game()
+        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator(policy_fn=policy_fn)
 
         agents = [
@@ -267,7 +268,7 @@ class TestGameIntegration:
         # This is a conceptual test - we'd need a multiplayer game implementation
         # to test this properly. For now, just verify the logic exists.
 
-        game = Connect4Game()
+        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator()
         agent = AlphazeroPlayer(game, evaluator, simulations=5)
 
@@ -396,6 +397,61 @@ def async_evaluator_factory():
         return async_evaluator
 
     return _async_evaluator
+
+
+class TestIncrementalTreeCache:
+    @pytest.fixture
+    def cache(self):
+        return IncrementalTreeCache()
+
+    @pytest.fixture
+    def simple_tree(self, game) -> MCTSNode:
+        root = MCTSNode(game.legal_actions(game.initial_state()), np.ones(7) / 7, np.zeros(2))
+        # Simulate expansion of action 1 (index 0)
+        child = MCTSNode(game.legal_actions(game.initial_state()), np.ones(7) / 7, np.zeros(2))
+        root.children[0] = child
+        # Simulate further expansion
+        grandchild = MCTSNode(game.legal_actions(game.initial_state()), np.ones(7) / 7, np.zeros(2))
+        child.children[1] = grandchild
+        return root
+
+    def test_set_and_get_same_trajectory(self, cache, simple_tree):
+        trajectory = [1, 2]
+        cache.set_incremental_tree(simple_tree, trajectory)
+        retrieved = cache.get_tree(trajectory)
+        assert retrieved == simple_tree
+
+    def test_get_incremental_extends(self, cache, simple_tree, game):
+        initial_trajectory = []
+        cache.set_incremental_tree(simple_tree, initial_trajectory)
+        extended_trajectory = [game.all_actions()[0]]  # Action at index 0
+        retrieved = cache.get_tree(extended_trajectory)
+        assert retrieved == simple_tree.children[0]
+
+    def test_get_incremental_multiple_steps(self, cache, simple_tree, game):
+        initial_trajectory = []
+        cache.set_incremental_tree(simple_tree, initial_trajectory)
+        extended_trajectory = [game.all_actions()[0], game.all_actions()[1]]
+        retrieved = cache.get_tree(extended_trajectory)
+        assert retrieved == simple_tree.children[0].children[1]
+
+    def test_get_incremental_mismatch_raises(self, cache, simple_tree):
+        cache.set_incremental_tree(simple_tree, [1])
+        with pytest.raises(ValueError, match="Incremental trajectory mismatch"):
+            cache.get_tree([2])
+
+    def test_get_incremental_not_found_raises(self, cache, simple_tree, game):
+        cache.set_incremental_tree(simple_tree, [])
+        with pytest.raises(ValueError, match="Action .* not found in tree"):
+            cache.get_tree([game.all_actions()[2]])  # Unexpanded action
+
+    def test_update_updates_cache(self, cache, simple_tree, game):
+        initial_trajectory = []
+        cache.set_incremental_tree(simple_tree, initial_trajectory)
+        extended_trajectory = [game.all_actions()[0]]
+        retrieved = cache.get_tree(extended_trajectory, update=True)
+        assert cache._trajectory == extended_trajectory
+        assert cache._tree == simple_tree.children[0]
 
 
 class TestAsyncPlayer:
