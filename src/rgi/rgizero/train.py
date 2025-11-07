@@ -135,6 +135,7 @@ class Trainer:
 
     def train_epoch(self):
         data_iter = enumerate(self.train_loader)
+        max_iters = min(len(self.train_loader), self.train_config.max_iters)
         while True:
             t0 = time.time()
             # determine and set the learning rate for this iteration
@@ -199,5 +200,6 @@ class Trainer:
             self.iter_num += 1
 
             # termination conditions
-            if self.iter_num > self.train_config.max_iters:
+            if self.iter_num >= max_iters:
                 break
+            print(f"iter {self.iter_num} of {max_iters}")
