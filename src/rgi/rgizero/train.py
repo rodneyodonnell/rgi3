@@ -128,6 +128,7 @@ class Trainer:
 
     def train(self):
         for epoch_id in range(self.train_config.max_epochs):
+            print(f"Training epoch {epoch_id} of {self.train_config.max_epochs}")
             self.train_epoch()
             # termination conditions
             if self.iter_num > self.train_config.max_iters:
@@ -135,7 +136,8 @@ class Trainer:
 
     def train_epoch(self):
         data_iter = enumerate(self.train_loader)
-        max_iters = min(len(self.train_loader), self.train_config.max_iters)
+        # Stop when the train_loader has been iterated over, or when we hit the global max_iters.
+        max_iters = min(self.iter_num + len(self.train_loader), self.train_config.max_iters)
         while True:
             t0 = time.time()
             # determine and set the learning rate for this iteration
@@ -202,4 +204,4 @@ class Trainer:
             # termination conditions
             if self.iter_num >= max_iters:
                 break
-            print(f"iter {self.iter_num} of {max_iters}")
+            # print(f"iter {self.iter_num} of {max_iters}")
