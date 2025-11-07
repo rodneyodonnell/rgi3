@@ -449,7 +449,7 @@ class TestIncrementalTreeCache:
         initial_trajectory = []
         cache.set_incremental_tree(simple_tree, initial_trajectory)
         extended_trajectory = [game.all_actions()[0]]
-        retrieved = cache.get_tree(extended_trajectory, update=True)
+        _retrieved = cache.get_tree(extended_trajectory, update=True)
         assert cache._trajectory == extended_trajectory
         assert cache._tree == simple_tree.children[0]
 

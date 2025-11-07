@@ -1,5 +1,8 @@
+#!/bin/bash
+set -e
+
 echo "Running nbstripout"
-uv run nbstripout $(find -iname *.ipynb)
+uv run nbstripout $(find . -iname '*.ipynb')
 
 echo "Running ruff-format"
 uv run ruff format .
