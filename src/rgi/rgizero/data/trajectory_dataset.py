@@ -214,15 +214,30 @@ def build_trajectory_loader(
     split: str,
     block_size: int,
     batch_size: int,
-    device_is_cuda: bool,
+    device: str | torch.device | None = None,
     workers: int = 4,
 ) -> DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
     ds = TrajectoryDataset(root_dir, split, block_size)
+    
+    # Create device-aware collate function if device is specified
+    if device == "mps":
+        device = torch.device(device)
+        def collate_fn(batch):
+            actions, policies, values = trajectory_collate_fn(batch)
+            # Copy to MPS, and convert dtype as MPS doesn't support float64.
+            return actions.to(device), policies.to(device, dtype=torch.float32), values.to(device, dtype=torch.float32)
+
+    else:
+        collate_fn = trajectory_collate_fn
+    
+    # Only use pin_memory for CUDA (MPS doesn't support it)
+    use_pin_memory = device is not None and device.type == "cuda"
+    
     return DataLoader(
         ds,
         batch_size=batch_size,
         num_workers=workers,
         shuffle=False,
-        pin_memory=device_is_cuda,
-        collate_fn=trajectory_collate_fn,
+        pin_memory=use_pin_memory,
+        collate_fn=collate_fn,
     )  # type: ignore
