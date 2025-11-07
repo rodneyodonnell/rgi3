@@ -171,7 +171,7 @@ class Trainer:
             for micro_step in range(self.train_config.gradient_accumulation_steps):
                 with self.ctx:
                     batch_id, data_batch = next(data_iter)
-                    logits, loss = self.model(data_batch)
+                    logits, loss = self.model(*data_batch)
                     loss = (
                         loss / self.train_config.gradient_accumulation_steps
                     )  # scale the loss to account for gradient accumulation
