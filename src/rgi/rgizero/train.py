@@ -100,7 +100,7 @@ class Trainer:
         for split, loader in [("train", self.train_loader), ("val", self.val_loader)]:
             data_iter = iter(loader)
             losses = torch.zeros(self.train_config.eval_iters)
-            for k in range(self.train_config.eval_iters):
+            for k in range(min(self.train_config.eval_iters, len(loader))):
                 data_batch = next(data_iter)
                 with self.ctx:
                     logits, loss = self.model(*data_batch)
