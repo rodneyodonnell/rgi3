@@ -212,13 +212,18 @@ def trajectory_collate_fn(batch: list[TrajectoryTuple]) -> tuple[torch.Tensor, t
 
 def build_trajectory_loader(
     root_dir: str | pathlib.Path,
-    split: str,
+    splits: list[str],
     block_size: int,
     batch_size: int,
     device: str | torch.device | None = None,
     workers: int = 4,
 ) -> DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-    ds = TrajectoryDataset(root_dir, split, block_size)
+
+    datasets = []
+    for split in splits:
+        split_ds = TrajectoryDataset(root_dir, split, block_size)
+        datasets.append(split_ds)
+    ds = torch.utils.data.ConcatDataset(datasets)
     
     # Create device-aware collate function if device is specified
     if device == "mps":
