@@ -120,6 +120,7 @@ class TrajectoryDatasetBuilder:
         np.save(split_dir / "value.npy", np.concatenate(self.values))
         np.save(split_dir / "boundaries.npy", boundaries.astype(np.int64))
 
+        return split_dir
 
 # TODO: Should this be a `torch.StackDataset` instead?
 class TrajectoryDataset(Dataset[TrajectoryTuple]):
