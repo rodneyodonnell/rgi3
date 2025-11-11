@@ -135,6 +135,8 @@ class Trainer:
                 break
 
     def train_epoch(self):
+        self.model.train()
+        assert torch.is_grad_enabled(), "Gradient should be enabled for training"
         data_iter = enumerate(self.train_loader)
         # Stop when the train_loader has been iterated over, or when we hit the global max_iters.
         max_iters = min(self.iter_num + len(self.train_loader), self.train_config.max_iters)
