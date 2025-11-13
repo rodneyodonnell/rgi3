@@ -21,6 +21,20 @@ from rgi.rgizero.models.token_transformer import TokenTransformer
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
 
+# TODO: Move to util class.
+def validate_probabilities_or_die(tensor: torch.Tensor, dim: int = 1, tol: float = 1e-6) -> bool:
+    # 1. Check if all values are >= 0 and <= 1
+    in_range = (tensor >= 0).all() and (tensor <= 1).all()
+    if not in_range:
+        raise ValueError(f"Probabilities are not in range [0, 1]: {tensor}")
+    
+    # 2. Check if sum is approximately 1.0
+    row_sums = tensor.sum(dim=dim)
+    sums_to_one = torch.allclose(row_sums, torch.ones_like(row_sums), atol=tol)
+    if not sums_to_one:
+        raise ValueError(f"Probabilities do not sum to 1.0: {tensor}, sums: {row_sums}")
+
+    return in_range and sums_to_one
 
 class PolicyValueHead(nn.Module):
     def __init__(self, n_embd: int, num_actions: int, num_players: int):
@@ -89,6 +103,7 @@ class ActionHistoryTransformer(nn.Module):
                 if flat_padding_mask is not None:
                     flat_policy_logits = flat_policy_logits[flat_padding_mask]
                     flat_policy_target = flat_policy_target[flat_padding_mask]
+                validate_probabilities_or_die(flat_policy_target)
                 # Calcualte the average loss per unpadded tokens.
                 # note: We may want to experiment with average per batch?
                 policy_loss = F.cross_entropy(flat_policy_logits, flat_policy_target, reduction="mean")
@@ -101,6 +116,7 @@ class ActionHistoryTransformer(nn.Module):
                 if flat_padding_mask is not None:
                     flat_value_logits = flat_value_logits[flat_padding_mask]
                     flat_value_target = flat_value_target[flat_padding_mask]
+                validate_probabilities_or_die(flat_value_target)
                 value_loss = F.cross_entropy(flat_value_logits, flat_value_target, reduction="mean")
                 loss += value_loss
         else:
