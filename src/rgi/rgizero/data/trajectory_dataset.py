@@ -20,9 +20,10 @@ from typing import Any, Sequence
 
 @dataclass
 class TrajectoryTuple:
-    action: torch.Tensor
-    policy: torch.Tensor
-    value: torch.Tensor
+    action: torch.Tensor  # (L, num_actions)
+    policy: torch.Tensor  # (L, num_actions)
+    value: torch.Tensor  # (L, num_players)
+    padding_mask: torch.Tensor # (L,)
 
 
 # Token can be any hashable type? Restrict to `str | int` for now.
@@ -190,11 +191,15 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
             value = torch.from_numpy(self.value_data[action_start_idx:action_end_idx])
 
         if apply_padding:
-            pad_len = self.block_size - (action_end_idx - action_start_idx)
+            action_len = action_end_idx - action_start_idx
+            pad_len = self.block_size - action_len
             action = torch.nn.functional.pad(action, (0, pad_len))
             policy = torch.nn.functional.pad(policy, (0, 0, 0, pad_len))
             value = torch.nn.functional.pad(value, (0, 0, 0, pad_len))
-        return TrajectoryTuple(action, policy, value)
+            padding_mask = torch.zeros(self.block_size, dtype=torch.bool)
+            padding_mask[:action_len] = True
+
+        return TrajectoryTuple(action, policy, value, padding_mask)
 
     def _read_vocab(self) -> Vocab:
         with open(self.split_dir / "vocab.json", "r") as f:
@@ -207,7 +212,8 @@ def trajectory_collate_fn(batch: list[TrajectoryTuple]) -> tuple[torch.Tensor, t
     actions = torch.stack([item.action for item in batch])
     policies = torch.stack([item.policy for item in batch])
     values = torch.stack([item.value for item in batch])
-    return actions, policies, values
+    padding_masks = torch.stack([item.padding_mask for item in batch])
+    return actions, policies, values, padding_masks
 
 
 def build_trajectory_loader(
@@ -233,9 +239,12 @@ def build_trajectory_loader(
     if device == "mps":
         device = torch.device(device)
         def collate_fn(batch):
-            actions, policies, values = trajectory_collate_fn(batch)
+            actions, policies, values, padding_masks = trajectory_collate_fn(batch)
             # Copy to MPS, and convert dtype as MPS doesn't support float64.
-            return actions.to(device), policies.to(device, dtype=torch.float32), values.to(device, dtype=torch.float32)
+            return (actions.to(device),
+                    policies.to(device, dtype=torch.float32),
+                    values.to(device, dtype=torch.float32),
+                    padding_masks.to(device, dtype=torch.bool))
 
     else:
         collate_fn = trajectory_collate_fn
