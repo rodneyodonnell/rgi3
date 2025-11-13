@@ -200,7 +200,7 @@ class Trainer:
                 # get loss as float. note: this is a CPU-GPU sync point
                 # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
                 lossf = loss.item() * self.train_config.gradient_accumulation_steps
-                print(f"iter {self.iter_num}/{max_iters}: loss {lossf:.4f}, time {dt * 1000:.2f}ms")
+                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, time {dt * 1000:.2f}ms")
             self.iter_num += 1
 
             # termination conditions
