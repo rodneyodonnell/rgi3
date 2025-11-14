@@ -162,7 +162,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         x_np = np.zeros((B, L), dtype=np.int32)
         for i, state in enumerate(states_list):
             encoded_row = self.vocab.encode(state.action_history)[-self.block_size :]
-            x_np[i, L - len(encoded_row) :] = encoded_row
+            x_np[i, :len(encoded_row)] = encoded_row
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
 
         # Process model on GPU.
