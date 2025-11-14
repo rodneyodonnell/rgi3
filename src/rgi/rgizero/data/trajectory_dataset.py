@@ -17,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from rgi.rgizero.common import TOKENS
 
 @dataclass
 class TrajectoryTuple:
@@ -184,7 +185,8 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         # Suppress warning about non-writable arrays since we only read from tensors
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
-            action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
+            # action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
+            action = torch.from_numpy(self.vocab.encode([TOKENS.START_OF_GAME] + self.action_data[action_start_idx:action_end_idx].tolist()))
             policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
             # TODO: value_data repeatedly stores the same value... we should just store it once per trajectory.
             # For now, store per-step values to match tests and pad/truncate like actions/policies.
@@ -193,7 +195,7 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         if apply_padding:
             action_len = action_end_idx - action_start_idx
             pad_len = self.block_size - action_len
-            action = torch.nn.functional.pad(action, (0, pad_len))
+            action = torch.nn.functional.pad(action, (0, pad_len-1))  # -1 because we add start token.
             policy = torch.nn.functional.pad(policy, (0, 0, 0, pad_len))
             value = torch.nn.functional.pad(value, (0, 0, 0, pad_len))
             padding_mask = torch.zeros(self.block_size, dtype=torch.bool)
