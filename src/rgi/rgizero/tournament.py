@@ -37,6 +37,7 @@ class Tournament:
             pid: PlayerStats(elo=initial_elo, history=[initial_elo]) for pid in player_factories
         }
         self.match_history: List[Tuple[str, str, float]] = [] # (p1, p2, result for p1)
+        self.pending_matches: List[Tuple[str, str]] = [] # (p1, p2) currently running
 
     def _expected_score(self, rating_a: float, rating_b: float) -> float:
         """Calculate expected score for player A against player B."""
@@ -93,6 +94,10 @@ class Tournament:
         # Count games between pairs
         pair_counts = {}
         for p1, p2, _ in self.match_history:
+            pair = tuple(sorted((p1, p2)))
+            pair_counts[pair] = pair_counts.get(pair, 0) + 1
+            
+        for p1, p2 in self.pending_matches:
             pair = tuple(sorted((p1, p2)))
             pair_counts[pair] = pair_counts.get(pair, 0) + 1
             
@@ -153,35 +158,53 @@ class Tournament:
         return pairings
 
     async def run(self, num_games: int, concurrent_games: int = 10):
-        """Run the tournament."""
+        """Run the tournament with constant concurrency."""
         
-        # We'll generate games in batches or just a stream.
-        # Since we want to update ELO after games to inform matchmaking, 
-        # doing it in smaller batches or a loop is better.
-        
-        # However, to maximize parallelism, we might want a large batch.
-        # But if we do a large batch, matchmaking won't adapt.
-        # Compromise: batch size = concurrent_games * 2
-        
-        games_remaining = num_games
+        games_to_start = num_games
+        active_tasks = set()
         pbar = tqdm(total=num_games, desc="Tournament Progress")
         
-        while games_remaining > 0:
-            batch_size = min(games_remaining, concurrent_games * 2)
-            pairings = self.matchmake(batch_size)
+        def start_games():
+            nonlocal games_to_start
+            needed = concurrent_games - len(active_tasks)
+            if needed <= 0 or games_to_start <= 0:
+                return
             
-            tasks = []
+            # Cap needed by games_to_start
+            count = min(needed, games_to_start)
+            pairings = self.matchmake(count)
+            
             for p1_id, p2_id in pairings:
-                tasks.append(self._play_single_game(p1_id, p2_id))
+                # Add to pending
+                self.pending_matches.append((p1_id, p2_id))
+                
+                # Create wrapper task
+                async def game_wrapper(p1, p2):
+                    try:
+                        await self._play_single_game(p1, p2)
+                    finally:
+                        # Remove from pending
+                        try:
+                            self.pending_matches.remove((p1, p2))
+                        except ValueError:
+                            pass
+                            
+                task = asyncio.create_task(game_wrapper(p1_id, p2_id))
+                active_tasks.add(task)
+                games_to_start -= 1
+
+        # Initial start
+        start_games()
+        
+        while active_tasks:
+            done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
             
-            # Run batch
-            results = await asyncio.gather(*tasks)
-            
-            # Update stats (already done in _play_single_game, but let's verify)
-            # Actually _play_single_game calls update_elo, so we are good.
-            
-            games_remaining -= len(results)
-            pbar.update(len(results))
+            for task in done:
+                await task # Propagate exceptions if any
+                pbar.update(1)
+                
+            active_tasks = pending
+            start_games()
             
         pbar.close()
         
