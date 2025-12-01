@@ -62,7 +62,7 @@ class StrongPlayer(Player):
 
 def test_elo_calculation():
     game = MockGame()
-    players = {"p1": RandomPlayer(), "p2": RandomPlayer()}
+    players = {"p1": lambda: RandomPlayer(), "p2": lambda: RandomPlayer()}
     tournament = Tournament(game, players, initial_elo=1000, k_factor=32)
     
     # Test expected score
@@ -84,7 +84,7 @@ def test_elo_calculation():
 
 def test_matchmaking():
     game = MockGame()
-    players = {f"p{i}": RandomPlayer() for i in range(4)}
+    players = {f"p{i}": lambda: RandomPlayer() for i in range(4)}
     tournament = Tournament(game, players)
     
     # Request 2 games
@@ -99,7 +99,7 @@ def test_matchmaking():
 @pytest.mark.asyncio
 async def test_tournament_run():
     game = MockGame()
-    players = {f"p{i}": RandomPlayer() for i in range(4)}
+    players = {f"p{i}": lambda: RandomPlayer() for i in range(4)}
     tournament = Tournament(game, players)
     
     # Run a small tournament

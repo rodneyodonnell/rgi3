@@ -19,10 +19,10 @@ async def main():
     # To make it interesting, we could try to make a "biased" random player if we had one,
     # but for now just 4 random players to see them draw/win randomly.
     players = {
-        "Random_1": RandomPlayer(game),
-        "Random_2": RandomPlayer(game),
-        "Random_3": RandomPlayer(game),
-        "Random_4": RandomPlayer(game),
+        "Random_1": lambda: RandomPlayer(game),
+        "Random_2": lambda: RandomPlayer(game),
+        "Random_3": lambda: RandomPlayer(game),
+        "Random_4": lambda: RandomPlayer(game),
     }
     
     tournament = Tournament(game, players, initial_elo=1200)

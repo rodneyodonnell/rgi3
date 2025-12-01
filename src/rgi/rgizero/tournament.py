@@ -2,7 +2,7 @@ import asyncio
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Callable
 
 import numpy as np
 from tqdm.asyncio import tqdm
@@ -26,15 +26,15 @@ class Tournament:
     def __init__(
         self,
         game: Game,
-        players: Dict[str, Player],
+        player_factories: Dict[str, Callable[[], Player]],
         initial_elo: float = 1200.0,
         k_factor: float = 32.0,
     ):
         self.game = game
-        self.players = players
+        self.player_factories = player_factories
         self.k_factor = k_factor
         self.stats: Dict[str, PlayerStats] = {
-            pid: PlayerStats(elo=initial_elo, history=[initial_elo]) for pid in players
+            pid: PlayerStats(elo=initial_elo, history=[initial_elo]) for pid in player_factories
         }
         self.match_history: List[Tuple[str, str, float]] = [] # (p1, p2, result for p1)
 
@@ -86,7 +86,7 @@ class Tournament:
         1. Prioritize pairs that have played fewer games against each other.
         2. Prioritize pairs with similar ELO ratings.
         """
-        player_ids = list(self.players.keys())
+        player_ids = list(self.player_factories.keys())
         if len(player_ids) < 2:
             return []
             
@@ -186,78 +186,11 @@ class Tournament:
         pbar.close()
         
     async def _play_single_game(self, p1_id: str, p2_id: str):
-        player1 = self.players[p1_id]
-        player2 = self.players[p2_id]
+        # Create fresh player instances using the factories
+        player1 = self.player_factories[p1_id]()
+        player2 = self.player_factories[p2_id]()
         
-        # play_game_async expects a list of players
-        # We need to be careful if players are stateful or not reusable concurrently.
-        # The AlphaZero players might share a network evaluator which handles batching.
-        # If the player objects themselves track state during a game, we might need to clone them or factory them.
-        # Assuming Player objects are stateless regarding the game progress (they take game_state as input),
-        # but they might have internal MCTS trees.
-        # AlphaZeroPlayer has an IncrementalTreeCache. If we reuse the same player instance in parallel games,
-        # the cache will be clobbered.
-        # So we SHOULD NOT reuse the same player instance concurrently if it has state.
-        
-        # CHECK: Does Player have state?
-        # AlphaZeroPlayer has `self.tree_cache`.
-        # So we cannot reuse the same instance.
-        
-        # We need a way to clone or create new players.
-        # For this implementation, let's assume we can clone or the user provided a factory?
-        # The current signature takes `players: Dict[str, Player]`.
-        # If we pass instances, we have a problem.
-        
-        # Workaround: If the player has a clone method, use it. Or if it's a factory.
-        # Or, we can just disable the tree cache or accept the race condition (bad).
-        # Better: Assume the provided players are "templates" and we should try to copy them if possible,
-        # or rely on them being thread-safe/async-safe.
-        # But `tree_cache` is definitely not async-safe if shared.
-        
-        # Let's modify the requirement: players should be factories or we clone them.
-        # For now, let's try to shallow copy?
-        # `copy.copy(player)` might work if `tree_cache` is re-initialized.
-        
-        # Let's check AlphaZeroPlayer again. `tree_cache` is initialized in `__init__`.
-        # If we copy, we get the same cache object.
-        # We need a fresh cache.
-        
-        # Let's assume for now we can just instantiate a new player if we knew how,
-        # but we don't know the class or args.
-        
-        # Hack: Manually reset tree cache on a copy?
-        import copy
-        
-        p1_copy = copy.copy(player1)
-        if hasattr(p1_copy, 'tree_cache'):
-             # Re-initialize cache
-             # We need to import IncrementalTreeCache or just set to a new one if we can access the class.
-             # Or just set it to a new instance if we can.
-             # Since we are inside `rgi` we can import it?
-             # But `Tournament` is in `rgizero`.
-             # Let's try to clear it.
-             # p1_copy.tree_cache = IncrementalTreeCache()
-             # We can't easily import IncrementalTreeCache here without circular imports maybe?
-             # Actually `alphazero.py` imports `base.py`. `tournament.py` imports `alphazero.py`.
-             # So we can import `IncrementalTreeCache` from `alphazero`.
-             pass
-
-        p2_copy = copy.copy(player2)
-        
-        # We need to handle the cache clearing properly.
-        # Let's add a helper method to clear/reset player state if needed.
-        # For now, let's just try to run it. If it fails, we fix it.
-        # But wait, `play_game_async` runs a loop.
-        
-        # To make this robust, let's import IncrementalTreeCache and reset it.
-        from rgi.rgizero.players.alphazero import IncrementalTreeCache
-        
-        if hasattr(p1_copy, 'tree_cache'):
-            p1_copy.tree_cache = IncrementalTreeCache()
-        if hasattr(p2_copy, 'tree_cache'):
-            p2_copy.tree_cache = IncrementalTreeCache()
-
-        result = await play_game_async(self.game, [p1_copy, p2_copy])
+        result = await play_game_async(self.game, [player1, player2])
         
         # result['winner'] is player ID (1 or 2) or None
         winner = result['winner']
