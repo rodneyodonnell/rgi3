@@ -103,9 +103,10 @@ class Tuner:
             })
             return True
         
-        best_loss_score = loss + elapsed * self.target_improvement_per_second
-        current_loss_score = loss + elapsed * self.target_improvement_per_second
-        if best_loss_score >= current_loss_score:
+        # lower score is better.
+        best_loss_score = self.best_loss - self.best_loss_elapsed * self.target_improvement_per_second
+        current_loss_score = loss - elapsed * self.target_improvement_per_second
+        if current_loss_score >= best_loss_score:
             return False
 
         prev_best_loss = self.best_loss
@@ -144,7 +145,7 @@ class Tuner:
         if self.best_loss is None:
             loss, elapsed, loss_dict = self.train_and_compute_loss(self.initial_params)
             self.maybe_update_best_param(loss, elapsed, self.initial_params, loss_dict)
-            print(f"## Initial Model, loss={self.best_loss}")
+            print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
 
         new_best_model_found = False
         for generation in range(1, num_generations+1):
@@ -152,10 +153,11 @@ class Tuner:
             new_best_model_found_this_generation = False
             for param_name in self.tune_options.keys():
                 prev_best_loss = self.best_loss
+                prev_best_loss_elapsed = self.best_loss_elapsed
                 print(f"## Tuning generation {self.generation}: {param_name}")
                 is_improved = self.tune_hyperparameter(param_name)
                 if is_improved:
-                    print(f"## Tuning generation {self.generation}: {param_name} improved, val={self.best_params[param_name]}, best={self.best_loss}, delta={prev_best_loss - self.best_loss}")
+                    print(f"## Tuning generation {self.generation}: {param_name} improved, val={self.best_params[param_name]}, best={self.best_loss}, delta={prev_best_loss - self.best_loss} elapsed={self.best_loss_elapsed}s delta={self.best_loss_elapsed - prev_best_loss_elapsed}s")
                 new_best_model_found_this_generation |= is_improved
             if not new_best_model_found_this_generation:
                 print(f"No updates for generation {generation}, stopping")
