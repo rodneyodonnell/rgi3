@@ -103,9 +103,9 @@ class Tuner:
             })
             return True
         
-        # lower score is better.
-        best_loss_score = self.best_loss - self.best_loss_elapsed * self.target_improvement_per_second
-        current_loss_score = loss - elapsed * self.target_improvement_per_second
+        # lower loss is better, lower elapsed is better, so lower score is better.
+        best_loss_score = self.best_loss + self.best_loss_elapsed * self.target_improvement_per_second
+        current_loss_score = loss + elapsed * self.target_improvement_per_second
         if current_loss_score >= best_loss_score:
             return False
 
