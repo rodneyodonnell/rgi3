@@ -2,6 +2,7 @@ import time
 import json
 import os
 from typing import Any
+from pprint import pprint
 
 def rewrite_cache_file(path, defaults):
     """Rewrite the cache file to match the current defaults."""
@@ -28,7 +29,12 @@ def train_with(**overrides):
 
 class Tuner:
     """Class to automate the choice of model hyperparameters to reduce loss."""
-    def __init__(self, tune_options: dict[str, list[Any]], initial_params: dict[str, Any], cache_version: str):
+    def __init__(self, 
+        tune_options: dict[str, list[Any]],
+        initial_params: dict[str, Any],
+        cache_version: str,
+        target_improvement_per_minute: float = 0.0,
+    ):
         """
         args:
             tune_options: dict[str, list[Any]]
@@ -39,6 +45,8 @@ class Tuner:
                 A version string for the cache file name.
         """
         self.tune_options = tune_options
+        self.target_improvement_per_minute = target_improvement_per_minute
+        self.target_improvement_per_second = target_improvement_per_minute / 60
 
         # Load cache file.
         self.cache_path = f'result_cache-v{cache_version}.json'
@@ -83,6 +91,7 @@ class Tuner:
         """If model is improved, add it to result_cache['best_model_trajectory']."""
         if self.best_loss is None:
             self.best_loss = loss
+            self.best_loss_elapsed = elapsed
             self.best_params = params.copy()
             self.result_cache['best_model_trajectory'].append({
                 'change': [],
@@ -94,12 +103,16 @@ class Tuner:
             })
             return True
         
-        if loss >= self.best_loss:
+        best_loss_score = loss + elapsed * self.target_improvement_per_second
+        current_loss_score = loss + elapsed * self.target_improvement_per_second
+        if best_loss_score >= current_loss_score:
             return False
 
         prev_best_loss = self.best_loss
+        prev_best_loss_elapsed = self.best_loss_elapsed
         prev_best_params = self.best_params
         self.best_loss = loss
+        self.best_loss_elapsed = elapsed
         self.best_params = params.copy()
 
         all_keys = sorted(set(self.best_params.keys()) | set(prev_best_params.keys()))
@@ -108,8 +121,9 @@ class Tuner:
         self.result_cache['best_model_trajectory'].append({
             'change': changed_params,
             'loss': loss,
-            'loss_delta': prev_best_loss - loss,
+            'loss_delta': prev_best_loss - loss,            
             'elapsed': elapsed,
+            'elapsed_delta': elapsed - prev_best_loss_elapsed,
             'args': params.copy(),
             'loss_dict': loss_dict.copy(),
         })
