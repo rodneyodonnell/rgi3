@@ -47,8 +47,9 @@ class Tuner:
         self.result_cache['best_model_trajectory'] = []
 
         # Create initial_param set to begin tuning from.
-        default_params = train.Hyperparameters()
-        self.initial_params = {k: (initial_params[k] if k in initial_params else getattr(default_params, k)) for k in tune_options.keys()}
+        # default_params = train.Hyperparameters()
+        # self.initial_params = {k: (initial_params[k] if k in initial_params else getattr(default_params, k)) for k in tune_options.keys()}
+        self.initial_params = {k: initial_params[k] for k in tune_options.keys()}
         for arg, val in self.initial_params.items():
             if val not in tune_options[arg]:
                 raise Exception(f"Value {arg}={val} not in {tune_options[arg]}")
@@ -73,10 +74,10 @@ class Tuner:
                 loss_dict['elapsed'] = elapsed
             except Exception as e:
                 print(f"Error training with params {params}: {e}")
-                loss_dict = {'corrected_loss': float('inf'), 'elapsed': float('inf')}
+                loss_dict = {'val': float('inf'), 'elapsed': float('inf')}
             self.result_cache[param_key] = loss_dict
             self._save_result_cache()
-        return loss_dict['corrected_loss'], loss_dict['elapsed'], loss_dict
+        return loss_dict['val'], loss_dict['elapsed'], loss_dict
     
     def maybe_update_best_param(self, loss, elapsed, params, loss_dict):
         """If model is improved, add it to result_cache['best_model_trajectory']."""
