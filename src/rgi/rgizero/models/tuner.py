@@ -1,7 +1,7 @@
 import time
 import json
 import os
-from typing import Any
+from typing import Any, Callable
 from pprint import pprint
 
 def rewrite_cache_file(path, defaults):
@@ -32,6 +32,7 @@ class Tuner:
     def __init__(self, 
         tune_options: dict[str, list[Any]],
         initial_params: dict[str, Any],
+        computed_tune_options: dict[str, Callable[[dict[str, Any]], list[Any]]],
         cache_version: str,
         target_improvement_per_minute: float = 0.0,
     ):
@@ -47,6 +48,7 @@ class Tuner:
         self.tune_options = tune_options
         self.target_improvement_per_minute = target_improvement_per_minute
         self.target_improvement_per_second = target_improvement_per_minute / 60
+        self.computed_tune_options = computed_tune_options
 
         # Load cache file.
         self.cache_path = f'result_cache-v{cache_version}.json'
@@ -180,6 +182,9 @@ class Tuner:
 
     def tune_hyperparameter(self, param_name) -> bool:
         params = self.best_params.copy()
+        if param_name in self.computed_tune_options:
+            self.tune_options[param_name] = self.computed_tune_options[param_name](params)
+            print(f"## Computed tune options: {param_name} = {self.tune_options[param_name]}")
         current_idx = self.tune_options[param_name].index(params[param_name])
 
         # Try tuning from current_idx updwrds.
