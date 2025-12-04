@@ -126,7 +126,7 @@ class Tuner:
             'loss': loss,
             'loss_delta': prev_best_loss - loss,            
             'elapsed': elapsed,
-            'elapsed_delta': elapsed - prev_best_loss_elapsed,
+            'elapsed_delta': prev_best_loss_elapsed - elapsed,
             'args': params.copy(),
             'loss_dict': loss_dict.copy(),
         })
@@ -159,7 +159,7 @@ class Tuner:
                 print(f"## Tuning generation {self.generation}: {param_name}")
                 is_improved = self.tune_hyperparameter(param_name)
                 if is_improved:
-                    print(f"## Tuning generation {self.generation}: {param_name} improved, val={self.best_params[param_name]}, best={self.best_loss}, delta={prev_best_loss - self.best_loss} elapsed={self.best_loss_elapsed}s delta={self.best_loss_elapsed - prev_best_loss_elapsed}s")
+                    print(f"## Tuning generation {self.generation}: {param_name} improved, val={self.best_params[param_name]}, best={self.best_loss}, delta={prev_best_loss - self.best_loss} elapsed={self.best_loss_elapsed}s delta={prev_best_loss_elapsed - self.best_loss_elapsed}s")
                 new_best_model_found_this_generation |= is_improved
             if not new_best_model_found_this_generation:
                 print(f"No updates for generation {generation}, stopping")
@@ -185,6 +185,15 @@ class Tuner:
         if param_name in self.computed_tune_options:
             self.tune_options[param_name] = self.computed_tune_options[param_name](params)
             print(f"## Computed tune options: {param_name} = {self.tune_options[param_name]}")
+            if params[param_name] not in self.tune_options[param_name]:
+                if self.tune_options[param_name] != sorted(self.tune_options[param_name]):
+                    raise Exception(f"Computed tune options {param_name} = {self.tune_options[param_name]} not sorted")
+                # Use the value one-below the target value if target not found.
+                for i in range(len(self.tune_options[param_name])):
+                    if self.tune_options[param_name][i] > params[param_name]:
+                        break                
+                params[param_name] = self.tune_options[param_name][max(0,i-1)]
+                
         current_idx = self.tune_options[param_name].index(params[param_name])
 
         # Try tuning from current_idx updwrds.
