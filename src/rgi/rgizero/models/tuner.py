@@ -1,6 +1,7 @@
 import time
 import json
 import os
+import ast
 from typing import Any, Callable
 from pprint import pprint
 
@@ -35,6 +36,7 @@ class Tuner:
         computed_tune_options: dict[str, Callable[[dict[str, Any]], list[Any]]],
         cache_version: str,
         target_improvement_per_minute: float = 0.0,
+        initialize_from_best_model: bool = True,
     ):
         """
         args:
@@ -55,6 +57,12 @@ class Tuner:
         self.result_cache = json.load(open(self.cache_path)) if os.path.exists(self.cache_path) else {}
         # Clear trajectory. We'll rebuild this in autotune()
         self.result_cache['best_model_trajectory'] = []
+
+        if initialize_from_best_model and self.result_cache:
+            cache_entries = [(k,v) for (k,v) in self.result_cache.items() if k != 'best_model_trajectory']
+            best_cache_entry = min(cache_entries, key=lambda kv: kv[1]['val'] + kv[1]['elapsed'] * self.target_improvement_per_second)
+            best_cache_params = dict(ast.literal_eval(best_cache_entry[0]))
+            initial_params.update(best_cache_params)
 
         # Create initial_param set to begin tuning from.
         # default_params = train.Hyperparameters()
@@ -226,7 +234,7 @@ class Tuner:
             for param_idx, (param_name, param_val) in enumerate(list_key):
                 remaining_key = str(list_key[:param_idx]+list_key[param_idx+1:])
                 tree[param_name][remaining_key][param_val] = eval_dict
-        print(f"## tree={tree}")
+        # print(f"## tree={tree}")
         # [d for v in tree['max_iters'].values() for d in [dict(v)] if len(d) > 1][0]
 
         # grouped_loss_dicts[param_name][val1][val2] = list_of_pairs
@@ -237,13 +245,13 @@ class Tuner:
                     for param_val_2, loss_dict_2 in xx.items():
                         if param_val_1 != param_val_2:
                             grouped_loss_dicts[param_name][param_val_1][param_val_2].append((loss_dict_1, loss_dict_2))
-        print(f"## deltas={grouped_loss_dicts}")
+        # print(f"## deltas={grouped_loss_dicts}")
 
         stats_dict = {}
         for param_name, v1_v2_loss_dicts in grouped_loss_dicts.items():
             for val1, v2_loss_dicts in v1_v2_loss_dicts.items():
                 for val2, loss_dicts in v2_loss_dicts.items():
-                    print(f"## {param_name} {val1} {val2} {loss_dicts}")
+                    #print(f"## {param_name} {val1} {val2} {loss_dicts}")
                     stats_dict[(param_name, val1, val2)] = self._compute_stats(loss_dicts)
         return stats_dict
 
