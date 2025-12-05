@@ -69,6 +69,9 @@ class Tuner:
         # self.initial_params = {k: (initial_params[k] if k in initial_params else getattr(default_params, k)) for k in tune_options.keys()}
         self.initial_params = {k: initial_params[k] for k in tune_options.keys()}
         for arg, val in self.initial_params.items():
+            if arg in ['log_interval']:
+                # Meh, ignore it if these change.
+                continue
             if val not in tune_options[arg]:
                 raise Exception(f"Value {arg}={val} not in {tune_options[arg]}")
 
