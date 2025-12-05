@@ -11,22 +11,33 @@ def rewrite_cache_file(path, defaults):
     new_data={}; 
     for k,v in data.items():
         if k == 'best_model_trajectory':
-            new_data[k] = v;
-            continue;
+            new_data[k] = v
+            continue
         
         d = dict(eval(k)); 
         for dk, dv in defaults.items():
-            d.setdefault(dk, dv);
+            d.setdefault(dk, dv)
         new_data[str(sorted(d.items()))] = v
     json.dump(new_data, open(path, 'w'))
 
+
+def clear_failures_from_cache_file(path, max_sane_val=1_000_000):
+    data=json.load(open(path))
+    new_data={}; 
+    for k,v in data.items():
+        if k == 'best_model_trajectory' or v['val'] < max_sane_val:
+            new_data[k] = v
+    json.dump(new_data, open(path, 'w'))
+
+
 def train_with(**overrides):
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
-    t0 = time.time()
-    loss_dict = train.train_and_evaluate(**overrides)
-    elapsed = time.time() - t0
-    print(f"## corrected_loss: {loss_dict['corrected_loss']:.4f}, original_loss: {loss_dict['val_loss']:.4f}, Time taken: {elapsed}s, overrides={overrides}")
-    return loss_dict, elapsed
+    raise NotImplementedError("train_with is not implemented")
+    # t0 = time.time()
+    # loss_dict = train.train_and_evaluate(**overrides)
+    # elapsed = time.time() - t0
+    # print(f"## corrected_loss: {loss_dict['corrected_loss']:.4f}, original_loss: {loss_dict['val_loss']:.4f}, Time taken: {elapsed}s, overrides={overrides}")
+    # return loss_dict, elapsed
 
 class Tuner:
     """Class to automate the choice of model hyperparameters to reduce loss."""
