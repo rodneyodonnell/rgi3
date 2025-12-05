@@ -105,7 +105,8 @@ class Tuner:
                 loss_dict, elapsed = train_with(**params)
                 loss_dict['elapsed'] = elapsed
             except Exception as e:
-                print(f"Error training with params {params}: {e}")
+                import traceback
+                print(f"Error training with params {params}: error='{e}' traceback='{traceback.format_exc()}'")
                 loss_dict = {'val': float('inf'), 'elapsed': float('inf')}
             self.result_cache[param_key] = loss_dict
             self._save_result_cache()
