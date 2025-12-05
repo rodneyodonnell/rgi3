@@ -205,6 +205,71 @@ class Tuner:
         # No updates improved best_loss
         return False
 
+    def print_hparam_stats(self):
+        import ast
+        from collections import defaultdict
+        
+        # for str_key, val in self.result_cache.items():
+        #     if str_key == 'best_model_trajectory':
+        #         continue
+        #     list_key = ast.literal_eval(str_key)
+        #     print(f"## key={list_key}")
+        #     print(f"## val={val}")
+        # # return None
+
+        # tree[param][remaining-key][param-val] = loss_dict
+        tree = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: None)))
+        for str_key, eval_dict in self.result_cache.items():
+            if str_key == 'best_model_trajectory':
+                continue
+            list_key = ast.literal_eval(str_key)
+            for param_idx, (param_name, param_val) in enumerate(list_key):
+                remaining_key = str(list_key[:param_idx]+list_key[param_idx+1:])
+                tree[param_name][remaining_key][param_val] = eval_dict
+        print(f"## tree={tree}")
+        # [d for v in tree['max_iters'].values() for d in [dict(v)] if len(d) > 1][0]
+
+        # grouped_loss_dicts[param_name][val1][val2] = list_of_pairs
+        grouped_loss_dicts = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: [])))
+        for param_name, xxx in tree.items():
+            for remaining_key, xx in xxx.items():
+                for param_val_1, loss_dict_1 in xx.items():
+                    for param_val_2, loss_dict_2 in xx.items():
+                        if param_val_1 != param_val_2:
+                            grouped_loss_dicts[param_name][param_val_1][param_val_2].append((loss_dict_1, loss_dict_2))
+        print(f"## deltas={grouped_loss_dicts}")
+
+        stats_dict = {}
+        for param_name, v1_v2_loss_dicts in grouped_loss_dicts.items():
+            for val1, v2_loss_dicts in v1_v2_loss_dicts.items():
+                for val2, loss_dicts in v2_loss_dicts.items():
+                    print(f"## {param_name} {val1} {val2} {loss_dicts}")
+                    stats_dict[(param_name, val1, val2)] = self._compute_stats(loss_dicts)
+        return stats_dict
+
+    def _compute_stats(self, loss_dicts):
+        import numpy as np
+        stats_dict = {
+            'mean_val_1': np.mean([loss_dict[0]['val'] for loss_dict in loss_dicts]),
+            'mean_val_2': np.mean([loss_dict[1]['val'] for loss_dict in loss_dicts]),
+            'mean_val_delta': np.mean([loss_dict[0]['val'] - loss_dict[1]['val'] for loss_dict in loss_dicts]),
+
+            'mean_elapsed_1': np.mean([loss_dict[0]['elapsed'] for loss_dict in loss_dicts]),
+            'mean_elapsed_2': np.mean([loss_dict[1]['elapsed'] for loss_dict in loss_dicts]),
+            'mean_elapsed_delta': np.mean([loss_dict[0]['elapsed'] - loss_dict[1]['elapsed'] for loss_dict in loss_dicts]),
+
+            'std_val_1': np.std([loss_dict[0]['val'] for loss_dict in loss_dicts]),
+            'std_val_2': np.std([loss_dict[1]['val'] for loss_dict in loss_dicts]),
+
+            'std_elapsed_1': np.std([loss_dict[0]['elapsed'] for loss_dict in loss_dicts]),
+            'std_elapsed_2': np.std([loss_dict[1]['elapsed'] for loss_dict in loss_dicts]),
+        }
+        # Assume normal distribution, Calculate how many standard deviations away from the mean the delta is.
+        stats_dict['std_val_delta'] = stats_dict['mean_val_delta'] / stats_dict['mean_val_1']
+        stats_dict['std_elapsed_delta'] = stats_dict['mean_elapsed_delta'] / stats_dict['mean_elapsed_1']
+
+        stats_dict = {k: float(v) for k, v in stats_dict.items()}
+        return stats_dict
 
 def retune_model(initial_params, tune_options, param_overrides, tune_option_overrides, cache_version, num_generations=10, out_label=None):
     # Tune single epoch model.
