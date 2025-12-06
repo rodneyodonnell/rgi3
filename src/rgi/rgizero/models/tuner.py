@@ -30,14 +30,62 @@ def clear_failures_from_cache_file(path, max_sane_val=1_000_000):
     json.dump(new_data, open(path, 'w'))
 
 
+import dataclasses
+from rgi.rgizero.models.transformer import TransformerConfig
+from rgi.rgizero.train import TrainConfig
+import torch
+from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
+import numpy as np
+
+transform_config_fields = {f.name for f in dataclasses.fields(TransformerConfig)}
+train_config_fields = {f.name for f in dataclasses.fields(TrainConfig)}
+
+print(f'transform_config_fields: {transform_config_fields}')
+print(f'train_config_fields: {train_config_fields}')
+
+def create_random_model(config: TransformerConfig, action_vocab_size, num_players,  seed: int, device: str):
+    torch.manual_seed(seed)
+    np.random.seed(seed) # Ensure numpy operations are also seeded
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    model = ActionHistoryTransformer(config=config, action_vocab_size=action_vocab_size, num_players=num_players)
+    model.to(device)
+    return model
+
+
 def train_with(**overrides):
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
-    raise NotImplementedError("train_with is not implemented")
-    # t0 = time.time()
+    t0 = time.time()
+
+    for override in overrides:
+        if override not in transform_config_fields and override not in train_config_fields:
+            raise ValueError(f"Invalid override: {override}")
+
+
+    model_config_overrides = {k:v for k,v in overrides.items() if k in transform_config_fields}
+    train_config_overrides = {k:v for k,v in overrides.items() if k in train_config_fields}
+
+    model_config = TransformerConfig(**model_config_overrides)
+    train_config = TrainConfig(**train_config_overrides)
+
+    print(f"model_config={model_config}")
+    print(f"train_config={train_config}")
+    model = create_random_model(model_config, action_vocab_size=action_vocab.vocab_size, num_players=game.num_players(state_0), seed=42)
+
+    training_splits = [f'gen-{generation_id}' for generation_id in range(1, NUM_GENERATIONS+1)]
+
+    model, trainer = train_model(model, training_splits, train_config)
+    loss_dict = trainer.estimate_loss()
+    loss_dict = {k: float(v) for k, v in loss_dict.items()}
+
+    # def train_model(model, training_splits, train_config):
     # loss_dict = train.train_and_evaluate(**overrides)
-    # elapsed = time.time() - t0
-    # print(f"## corrected_loss: {loss_dict['corrected_loss']:.4f}, original_loss: {loss_dict['val_loss']:.4f}, Time taken: {elapsed}s, overrides={overrides}")
-    # return loss_dict, elapsed
+    elapsed = time.time() - t0
+    print(f"## train_loss: {loss_dict['train']:.4f}, val_loss: {loss_dict['val']:.4f}, Time taken: {elapsed}s, overrides={overrides}")
+    return loss_dict, elapsed
+
 
 class Tuner:
     """Class to automate the choice of model hyperparameters to reduce loss."""
@@ -48,6 +96,7 @@ class Tuner:
         cache_version: str,
         target_improvement_per_minute: float = 0.0,
         initialize_from_best_model: bool = True,
+        save_trained_models: bool = False,
     ):
         """
         args:
@@ -62,6 +111,7 @@ class Tuner:
         self.target_improvement_per_minute = target_improvement_per_minute
         self.target_improvement_per_second = target_improvement_per_minute / 60
         self.computed_tune_options = computed_tune_options
+        self.save_trained_models = save_trained_models
 
         # Load cache file.
         self.cache_path = f'result_cache-v{cache_version}.json'
