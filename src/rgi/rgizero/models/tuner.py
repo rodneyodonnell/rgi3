@@ -146,6 +146,7 @@ class Tuner:
         if all_tune_keys != initial_params_keys:
             raise ValueError(f"all_tune_keys != initial_params_keys. Added: {initial_params_keys - all_tune_keys}. Removed: {all_tune_keys - initial_params_keys}")
 
+        self.all_tune_keys = all_tune_keys
         self.target_improvement_per_minute = target_improvement_per_minute
         self.target_improvement_per_second = target_improvement_per_minute / 60
         self.save_trained_models = save_trained_models
@@ -186,7 +187,7 @@ class Tuner:
 
     def train_and_compute_loss(self, params) -> tuple[float, float]:
         """Look up loss in cache, or train model to compute it and save to cache."""
-        param_key = str(sorted(params.items()))
+        param_key = str(sorted((k,v) for (k,v) in params.items() if k in self.all_tune_keys))
         if param_key in self.result_cache:
             loss_dict = self.result_cache[param_key]
         else:
@@ -245,6 +246,17 @@ class Tuner:
         self._save_result_cache()
         return True
 
+    def _recalculate_tunable_params(self, params) -> dict[str, Any]:
+        params = params.copy()
+        for k,fn in self.computed_tune_options.items():
+            current_val = params[k]
+            possible_vals = fn(params)
+            # TODO: Find the closest option?
+            if current_val not in possible_vals:
+                raise ValueError(f"Current value {current_val} for {k} not in possible values {possible_vals}")
+            
+        return params
+
     def autotune(self, num_generations=10) -> bool:
         """Autotune the model by training and evaluating it with different hyperparameters.
         
@@ -257,8 +269,9 @@ class Tuner:
                 - If any improvment was made, update the default parameters and move on to tuning the next hyperparameter.
         """
         if self.best_loss is None:
-            loss, elapsed, loss_dict = self.train_and_compute_loss(self.current_params)
-            self.maybe_update_best_param(loss, elapsed, self.current_params, loss_dict)
+            recalculated_params = self._recalculate_tunable_params(self.current_params)
+            loss, elapsed, loss_dict = self.train_and_compute_loss(recalculated_params)
+            self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
             print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
 
         new_best_model_found = False
