@@ -59,15 +59,15 @@ from rgi.rgizero.train import Trainer
 
 def train_model(model, training_splits, train_config, device: str, n_max_context: int, data_dir: str, num_workers: int = 0):
     # Load dataset
-    trajectory_loader = build_trajectory_loader(
+    train_loader, val_loader = build_trajectory_loader(
         data_dir, training_splits, block_size=n_max_context, batch_size=train_config.batch_size,
         device=device, workers=num_workers, shuffle=True)
         
     trainer = Trainer(
         model=model,
         train_config=train_config,
-        train_loader=trajectory_loader,
-        val_loader=trajectory_loader,  # TODO: Create separate validation loader
+        train_loader=train_loader,
+        val_loader=val_loader,
         device=device
     )
 

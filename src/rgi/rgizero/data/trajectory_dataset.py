@@ -226,7 +226,7 @@ def build_trajectory_loader(
     device: str | torch.device | None = None,
     workers: int = 4,
     shuffle: bool = True,
-) -> DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+) -> tuple[DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]]:
 
     if isinstance(splits, str):  # allow single split to be passed as a string
         splits = [splits]
@@ -235,7 +235,12 @@ def build_trajectory_loader(
     for split in splits:
         split_ds = TrajectoryDataset(root_dir, split, block_size)
         datasets.append(split_ds)
-    ds = torch.utils.data.ConcatDataset(datasets)
+    full_dataset = torch.utils.data.ConcatDataset(datasets)
+
+    val_size = int(len(full_dataset) * 0.1)
+    train_size = len(full_dataset) - val_size
+    generator = torch.Generator().manual_seed(42)
+    train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size], generator=generator)
 
     # Create device-aware collate function if device is specified
     if device == "mps":
@@ -254,11 +259,24 @@ def build_trajectory_loader(
     # Only use pin_memory for CUDA (MPS doesn't support it)
     use_pin_memory = device is not None and device.type == "cuda"
     
-    return DataLoader(
-        ds,
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=batch_size,
         num_workers=workers,
         shuffle=shuffle,
         pin_memory=use_pin_memory,
         collate_fn=collate_fn,
+        generator=torch.Generator().manual_seed(42),
     )  # type: ignore
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        num_workers=workers,
+        shuffle=shuffle,
+        pin_memory=use_pin_memory,
+        collate_fn=collate_fn,
+        generator=torch.Generator().manual_seed(42),
+    )  # type: ignore
+
+    return train_loader, val_loader
