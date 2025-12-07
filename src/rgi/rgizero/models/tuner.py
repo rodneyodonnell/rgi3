@@ -119,7 +119,7 @@ class Tuner:
         cache_version: str,
         target_improvement_per_minute: float = 0.0,
         initialize_from_best_model: bool = True,
-        save_trained_models: bool = False,
+        save_trained_models: bool = True,
     ):
         """
         args:
@@ -155,6 +155,8 @@ class Tuner:
         self.save_trained_models = save_trained_models
 
         # Load cache file.
+        self.model_cache_root = f'models/cache/{cache_version}'
+        os.makedirs(self.model_cache_root, exist_ok=True)
         self.cache_path = f'result_cache-v{cache_version}.json'
         self.result_cache = json.load(open(self.cache_path)) if os.path.exists(self.cache_path) else {}
 
@@ -186,13 +188,12 @@ class Tuner:
         self.generation = 0
 
     def _save_model(self, param_key_hash, model):
-        path = f'models/{param_key_hash}.pt'
+        path = f'{self.model_cache_root}/{param_key_hash}.pt'
         if self.save_trained_models:
-            os.makedirs('models', exist_ok=True)
             torch.save(model, path)
     
     def _load_model(self, param_key_hash):
-        path = f'models/{param_key_hash}.pt'
+        path = f'{self.model_cache_root}/{param_key_hash}.pt'
         if os.path.exists(path):
             return torch.load(path)
         return None
@@ -308,6 +309,7 @@ class Tuner:
                 - If any improvment was made, update the default parameters and move on to tuning the next hyperparameter.
         """
         if self.best_loss is None:
+            print(f"Training initial model as baseline.")
             recalculated_params = self._recalculate_tunable_params(self.current_params)
             loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params)
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
