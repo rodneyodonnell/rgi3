@@ -143,6 +143,8 @@ class Tuner:
             raise ValueError(f"Can't tune fixed keys -> {fixed_keys & all_tune_keys}")
         if fixed_keys & initial_params_keys:
             raise ValueError(f"Duplicate fixed and initial keys -> {fixed_keys & initial_params_keys}")
+        if all_tune_keys != initial_params_keys:
+            raise ValueError(f"all_tune_keys != initial_params_keys. Added: {initial_params_keys - all_tune_keys}. Removed: {all_tune_keys - initial_params_keys}")
 
         self.target_improvement_per_minute = target_improvement_per_minute
         self.target_improvement_per_second = target_improvement_per_minute / 60
@@ -155,28 +157,29 @@ class Tuner:
         self.best_hparams_path = f'best_hparams-v{cache_version}.json'
         self.best_model_trajectory = []
 
-        if initialize_from_best_model and self.result_cache:  # not just 'best_model_trajectory'
-            cache_entries = [(k,v) for (k,v) in self.result_cache.items() if k != 'best_model_trajectory']
-            best_cache_entry = min(cache_entries, key=lambda kv: kv[1]['val'] + kv[1]['elapsed'] * self.target_improvement_per_second)
+        if initialize_from_best_model and self.result_cache:
+            best_cache_entry = min(self.result_cache.items(), key=lambda kv: kv[1]['val'] + kv[1]['elapsed'] * self.target_improvement_per_second)
             best_cache_params = dict(ast.literal_eval(best_cache_entry[0]))
-            initial_params.update(best_cache_params)
+            initial_params = best_cache_params
+            new_initial_params_keys = initial_params.keys()
+            if initial_params_keys != new_initial_params_keys:
+                raise ValueError(f"initial_params_keys != new_initial_params_keys after loadding best params. Added: {new_initial_params_keys - initial_params_keys}. Removed: {initial_params_keys - new_initial_params_keys}")
+
+
+        self.current_params = initial_params.copy()
+        self.current_params.update(self.fixed_params)
 
         # Create initial_param set to begin tuning from.
         # default_params = train.Hyperparameters()
         # self.initial_params = {k: (initial_params[k] if k in initial_params else getattr(default_params, k)) for k in tune_options.keys()}
-        self.initial_params = {k: initial_params[k] for k in tune_options.keys()}
-        for arg, val in self.initial_params.items():
-            if arg in ['log_interval']:
-                # Meh, ignore it if these change.
-                continue
-            if val not in tune_options[arg]:
-                raise Exception(f"Value {arg}={val} not in {tune_options[arg]}")
+        # self.initial_params = {k: initial_params[k] for k in tune_options.keys()}
+        # for arg, val in self.initial_params.items():
+        #     if val not in tune_options[arg]:
+        #         raise Exception(f"Value {arg}={val} not in {tune_options[arg]}")
 
         self.best_params = None
         self.best_loss = None
         self.generation = 0
-
-        print(f"Initial params: {self.best_params}")
 
     def _save_result_cache(self):
         json.dump(self.result_cache, open(self.cache_path, 'w'))
