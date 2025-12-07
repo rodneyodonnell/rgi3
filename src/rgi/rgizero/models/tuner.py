@@ -54,8 +54,27 @@ def create_random_model(config: TransformerConfig, action_vocab_size, num_player
     model.to(device)
     return model
 
+from rgi.rgizero.data.trajectory_dataset import build_trajectory_loader
+from rgi.rgizero.train import Trainer
 
-def train_with(**overrides):
+def train_model(model, training_splits, train_config, device: str, n_max_context: int, data_dir: str, num_workers: int = 0):
+    # Load dataset
+    trajectory_loader = build_trajectory_loader(
+        data_dir, training_splits, block_size=n_max_context, batch_size=train_config.batch_size,
+        device=device, workers=num_workers, shuffle=True)
+        
+    trainer = Trainer(
+        model=model,
+        train_config=train_config,
+        train_loader=trajectory_loader,
+        val_loader=trajectory_loader,  # TODO: Create separate validation loader
+        device=device
+    )
+
+    trainer.train()
+    return model, trainer
+
+def train_with(vocab_size, num_players, num_genrations, device, n_max_context, data_dir,**overrides):
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
     t0 = time.time()
 
@@ -72,11 +91,11 @@ def train_with(**overrides):
 
     print(f"model_config={model_config}")
     print(f"train_config={train_config}")
-    model = create_random_model(model_config, action_vocab_size=action_vocab.vocab_size, num_players=game.num_players(state_0), seed=42)
+    model = create_random_model(model_config, action_vocab_size=vocab_size, num_players=num_players, seed=42, device=device)
 
-    training_splits = [f'gen-{generation_id}' for generation_id in range(1, NUM_GENERATIONS+1)]
+    training_splits = [f'gen-{generation_id}' for generation_id in range(1, num_genrations+1)]
 
-    model, trainer = train_model(model, training_splits, train_config)
+    model, trainer = train_model(model, training_splits, train_config, device=device, n_max_context=n_max_context, data_dir=data_dir)
     loss_dict = trainer.estimate_loss()
     loss_dict = {k: float(v) for k, v in loss_dict.items()}
 
@@ -90,8 +109,9 @@ def train_with(**overrides):
 class Tuner:
     """Class to automate the choice of model hyperparameters to reduce loss."""
     def __init__(self, 
-        tune_options: dict[str, list[Any]],
+        fixed_params: dict[str, Any],
         initial_params: dict[str, Any],
+        tune_options: dict[str, list[Any]],
         computed_tune_options: dict[str, Callable[[dict[str, Any]], list[Any]]],
         cache_version: str,
         target_improvement_per_minute: float = 0.0,
@@ -107,19 +127,35 @@ class Tuner:
             cache_version: str
                 A version string for the cache file name.
         """
-        self.tune_options = tune_options
+        self.fixed_params = fixed_params.copy()        
+        self.tune_options = tune_options.copy()
+        self.computed_tune_options = computed_tune_options.copy()
+
+        initial_params_keys = set(initial_params.keys())
+        fixed_keys = set(fixed_params.keys())
+        tune_keys = set(tune_options.keys())
+        computed_tune_keys = set(computed_tune_options.keys())
+        all_tune_keys = tune_keys | computed_tune_keys
+        
+        if tune_keys & computed_tune_keys:
+            raise ValueError(f"Duplicate keys found in tune_keys and comuted_tune_keys -> {tune_keys & computed_tune_keys}")
+        if fixed_keys & all_tune_keys:
+            raise ValueError(f"Can't tune fixed keys -> {fixed_keys & all_tune_keys}")
+        if fixed_keys & initial_params_keys:
+            raise ValueError(f"Duplicate fixed and initial keys -> {fixed_keys & initial_params_keys}")
+
         self.target_improvement_per_minute = target_improvement_per_minute
         self.target_improvement_per_second = target_improvement_per_minute / 60
-        self.computed_tune_options = computed_tune_options
         self.save_trained_models = save_trained_models
 
         # Load cache file.
         self.cache_path = f'result_cache-v{cache_version}.json'
         self.result_cache = json.load(open(self.cache_path)) if os.path.exists(self.cache_path) else {}
-        # Clear trajectory. We'll rebuild this in autotune()
-        self.result_cache['best_model_trajectory'] = []
 
-        if initialize_from_best_model and self.result_cache:
+        self.best_hparams_path = f'best_hparams-v{cache_version}.json'
+        self.best_model_trajectory = []
+
+        if initialize_from_best_model and self.result_cache:  # not just 'best_model_trajectory'
             cache_entries = [(k,v) for (k,v) in self.result_cache.items() if k != 'best_model_trajectory']
             best_cache_entry = min(cache_entries, key=lambda kv: kv[1]['val'] + kv[1]['elapsed'] * self.target_improvement_per_second)
             best_cache_params = dict(ast.literal_eval(best_cache_entry[0]))
