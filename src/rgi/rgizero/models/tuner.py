@@ -2,6 +2,7 @@ import time
 import json
 import os
 import ast
+import hashlib
 from typing import Any, Callable
 from pprint import pprint
 
@@ -84,7 +85,9 @@ def train_with(vocab_size, num_players, num_genrations, device, n_max_context, d
 
 
     model_config_overrides = {k:v for k,v in overrides.items() if k in transform_config_fields}
+    model_config_overrides['n_max_context'] = n_max_context
     train_config_overrides = {k:v for k,v in overrides.items() if k in train_config_fields}
+    train_config_overrides['device'] = device
 
     model_config = TransformerConfig(**model_config_overrides)
     train_config = TrainConfig(**train_config_overrides)
@@ -103,7 +106,7 @@ def train_with(vocab_size, num_players, num_genrations, device, n_max_context, d
     # loss_dict = train.train_and_evaluate(**overrides)
     elapsed = time.time() - t0
     print(f"## train_loss: {loss_dict['train']:.4f}, val_loss: {loss_dict['val']:.4f}, Time taken: {elapsed}s, overrides={overrides}")
-    return loss_dict, elapsed
+    return loss_dict, elapsed, model
 
 
 class Tuner:
@@ -182,25 +185,47 @@ class Tuner:
         self.best_loss = None
         self.generation = 0
 
+    def _save_model(self, param_key_hash, model):
+        path = f'models/{param_key_hash}.pt'
+        if self.save_trained_models:
+            os.makedirs('models', exist_ok=True)
+            torch.save(model, path)
+    
+    def _load_model(self, param_key_hash):
+        path = f'models/{param_key_hash}.pt'
+        if self.save_trained_models and os.path.exists(path):
+            return torch.load(path)
+        return None
+
     def _save_result_cache(self):
         json.dump(self.result_cache, open(self.cache_path, 'w'))
 
-    def train_and_compute_loss(self, params) -> tuple[float, float]:
+    def train_and_compute_loss(self, params, reload_model=False) -> tuple[float, float]:
         """Look up loss in cache, or train model to compute it and save to cache."""
         param_key = str(sorted((k,v) for (k,v) in params.items() if k in self.all_tune_keys))
+        param_key_hash = hashlib.sha256(param_key.encode('utf-8')).hexdigest()
         if param_key in self.result_cache:
             loss_dict = self.result_cache[param_key]
+            param_key_hash = loss_dict['param_hash']
+            model = self._load_model(param_key_hash) if reload_model else None
         else:
             try:
-                loss_dict, elapsed = train_with(**params)
+                loss_dict, elapsed, model = train_with(**params)
                 loss_dict['elapsed'] = elapsed
+                loss_dict['param_hash'] = param_key_hash
             except Exception as e:
                 import traceback
                 print(f"Error training with params {params}: error='{e}' traceback='{traceback.format_exc()}'")
                 loss_dict = {'val': float('inf'), 'elapsed': float('inf')}
+                model = None
+                # TODO: Do we want to rethrow here? Maybe make 'strict' optional?
+                raise e
+            
             self.result_cache[param_key] = loss_dict
             self._save_result_cache()
-        return loss_dict['val'], loss_dict['elapsed'], loss_dict
+            if model:
+                self._save_model(param_key_hash, model)
+        return loss_dict['val'], loss_dict['elapsed'], loss_dict, model
     
     def maybe_update_best_param(self, loss, elapsed, params, loss_dict):
         """If model is improved, add it to result_cache['best_model_trajectory']."""
@@ -270,7 +295,7 @@ class Tuner:
         """
         if self.best_loss is None:
             recalculated_params = self._recalculate_tunable_params(self.current_params)
-            loss, elapsed, loss_dict = self.train_and_compute_loss(recalculated_params)
+            loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params)
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
             print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
 
