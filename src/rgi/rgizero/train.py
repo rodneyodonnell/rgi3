@@ -130,12 +130,12 @@ class Trainer:
     def train(self):
         for epoch_id in range(self.train_config.max_epochs):
             # print(f"Training epoch {epoch_id} of {self.train_config.max_epochs}")
-            self.train_epoch()
+            self.train_epoch(epoch_id)
             # termination conditions
             if self.iter_num > self.train_config.max_iters:
                 break
 
-    def train_epoch(self):
+    def train_epoch(self, epoch_id):
         self.model.train()
         assert torch.is_grad_enabled(), "Gradient should be enabled for training"
         data_iter = enumerate(self.train_loader)

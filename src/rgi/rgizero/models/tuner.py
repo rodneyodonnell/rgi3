@@ -74,7 +74,7 @@ def train_model(model, training_splits, train_config, device: str, n_max_context
     trainer.train()
     return model, trainer
 
-def train_with(vocab_size, num_players, num_genrations, device, n_max_context, data_dir,**overrides):
+def train_with(vocab_size, num_players, num_genrations, device, n_max_context, data_dir, **overrides):
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
     t0 = time.time()
 
@@ -257,8 +257,8 @@ class Tuner:
                 - If any improvment was made, update the default parameters and move on to tuning the next hyperparameter.
         """
         if self.best_loss is None:
-            loss, elapsed, loss_dict = self.train_and_compute_loss(self.initial_params)
-            self.maybe_update_best_param(loss, elapsed, self.initial_params, loss_dict)
+            loss, elapsed, loss_dict = self.train_and_compute_loss(self.current_params)
+            self.maybe_update_best_param(loss, elapsed, self.current_params, loss_dict)
             print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
 
         new_best_model_found = False
