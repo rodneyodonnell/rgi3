@@ -279,23 +279,20 @@ class Tuner:
             possible_vals = fn(params)
             self.tune_options[k] = possible_vals
             # TODO: Find the closest option?
-            if current_val not in possible_vals:
-                raise ValueError(f"Current value {current_val} for {k} not in possible values {possible_vals}")
+            if current_val in possible_vals:
+                continue
+            elif len(possible_vals) == 1:
+                params[k] = possible_vals[0]
+            elif possible_vals == sorted(possible_vals):
+                # Chose a value one below where the target value would be inserted.
+                for i in range(len(possible_vals)):
+                    if possible_vals[i] > current_val:
+                        break
+                params[k] = possible_vals[max(0,i-1)]
+            else:
+                raise ValueError(f"Current value {current_val} for {k} not in unsorted possible values {possible_vals}")
             
         return params
-
-        # if param_name in self.computed_tune_options:
-        #     self.tune_options[param_name] = self.computed_tune_options[param_name](params)
-        #     print(f"## Computed tune options: {param_name} = {self.tune_options[param_name]}")
-        #     if params[param_name] not in self.tune_options[param_name]:
-        #         if self.tune_options[param_name] != sorted(self.tune_options[param_name]):
-        #             raise Exception(f"Computed tune options {param_name} = {self.tune_options[param_name]} not sorted")
-        #         # Use the value one-below the target value if target not found.
-        #         for i in range(len(self.tune_options[param_name])):
-        #             if self.tune_options[param_name][i] > params[param_name]:
-        #                 break                
-        #         params[param_name] = self.tune_options[param_name][max(0,i-1)]
-
 
     def autotune(self, num_generations=10) -> bool:
         """Autotune the model by training and evaluating it with different hyperparameters.
