@@ -141,8 +141,9 @@ class Trainer:
         data_iter = enumerate(self.train_loader)
         # Stop when the train_loader has been iterated over, or when we hit the global max_iters.
         max_iters = min(self.iter_num + len(self.train_loader), self.train_config.max_iters)
+        t0 = time.time()
+        t0_iter = self.iter_num
         while True:
-            t0 = time.time()
             # determine and set the learning rate for this iteration
             lr = self.get_lr(self.iter_num) if self.train_config.decay_lr else self.train_config.learning_rate
             for param_group in self.optimizer.param_groups:
@@ -193,15 +194,19 @@ class Trainer:
             # flush the gradients as soon as we can, no need for this memory anymore
             self.optimizer.zero_grad(set_to_none=True)
 
-            # timing and logging
-            t1 = time.time()
-            dt = t1 - t0
-            t0 = t1
             if self.iter_num % self.train_config.log_interval == 0:
+                # timing and logging
+                t1 = time.time()
+                t1_iter = self.iter_num
+                dt = t1 - t0
+                d_iter = t1_iter - t0_iter
+                t0 = t1
+                t0_iter = t1_iter
+                ms_per_iter = (1_000 * dt / d_iter) if d_iter else 0
                 # get loss as float. note: this is a CPU-GPU sync point
                 # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
                 lossf = loss.item() * self.train_config.gradient_accumulation_steps
-                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, time {dt * 1000:.2f}ms")
+                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, time {dt:.2f}s, iter_time: {ms_per_iter:.2f}ms")
             self.iter_num += 1
 
             # termination conditions
