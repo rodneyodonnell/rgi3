@@ -193,7 +193,7 @@ class Tuner:
     
     def _load_model(self, param_key_hash):
         path = f'models/{param_key_hash}.pt'
-        if self.save_trained_models and os.path.exists(path):
+        if os.path.exists(path):
             return torch.load(path)
         return None
 
@@ -233,7 +233,7 @@ class Tuner:
             self.best_loss = loss
             self.best_loss_elapsed = elapsed
             self.best_params = params.copy()
-            self.result_cache['best_model_trajectory'].append({
+            self.best_model_trajectory.append({
                 'change': [],
                 'loss': loss,
                 'loss_delta': 0,
@@ -259,7 +259,7 @@ class Tuner:
         all_keys = sorted(set(self.best_params.keys()) | set(prev_best_params.keys()))
         changed_params = [{'k':k, 'old': prev_best_params.get(k), 'new':self.best_params.get(k)} for k in all_keys if prev_best_params.get(k) != self.best_params.get(k)]
 
-        self.result_cache['best_model_trajectory'].append({
+        self.best_model_trajectory.append({
             'change': changed_params,
             'loss': loss,
             'loss_delta': prev_best_loss - loss,            
@@ -276,11 +276,25 @@ class Tuner:
         for k,fn in self.computed_tune_options.items():
             current_val = params[k]
             possible_vals = fn(params)
+            self.tune_options[k] = possible_vals
             # TODO: Find the closest option?
             if current_val not in possible_vals:
                 raise ValueError(f"Current value {current_val} for {k} not in possible values {possible_vals}")
             
         return params
+
+        # if param_name in self.computed_tune_options:
+        #     self.tune_options[param_name] = self.computed_tune_options[param_name](params)
+        #     print(f"## Computed tune options: {param_name} = {self.tune_options[param_name]}")
+        #     if params[param_name] not in self.tune_options[param_name]:
+        #         if self.tune_options[param_name] != sorted(self.tune_options[param_name]):
+        #             raise Exception(f"Computed tune options {param_name} = {self.tune_options[param_name]} not sorted")
+        #         # Use the value one-below the target value if target not found.
+        #         for i in range(len(self.tune_options[param_name])):
+        #             if self.tune_options[param_name][i] > params[param_name]:
+        #                 break                
+        #         params[param_name] = self.tune_options[param_name][max(0,i-1)]
+
 
     def autotune(self, num_generations=10) -> bool:
         """Autotune the model by training and evaluating it with different hyperparameters.
@@ -303,7 +317,7 @@ class Tuner:
         for generation in range(1, num_generations+1):
             self.generation = generation
             new_best_model_found_this_generation = False
-            for param_name in self.tune_options.keys():
+            for param_name in self.all_tune_keys:  # TODO: Sort these in a sensible way?
                 prev_best_loss = self.best_loss
                 prev_best_loss_elapsed = self.best_loss_elapsed
                 print(f"## Tuning generation {self.generation}: {param_name}")
@@ -317,13 +331,14 @@ class Tuner:
             new_best_model_found = True
 
 
-    def _tune_hyperparameter_range(self, params, param_name, idx_list) -> bool:
+    def _tune_hyperparameter_range(self, params, param_name, val_list) -> bool:
         """Try each idx in idx_list for param. Return as soon as one fails to update best_params. Return True if any updates succeed."""
         best_updated = False
 
-        for idx in idx_list:
-            params[param_name] = self.tune_options[param_name][idx]
-            loss, elapsed, loss_dict = self.train_and_compute_loss(params)
+        for val in val_list:
+            params[param_name] = val
+            params = self._recalculate_tunable_params(params)
+            loss, elapsed, loss_dict, model = self.train_and_compute_loss(params)
             if self.maybe_update_best_param(loss, elapsed, params, loss_dict):
                 best_updated = True
             else:
@@ -331,26 +346,20 @@ class Tuner:
         return best_updated            
 
     def tune_hyperparameter(self, param_name) -> bool:
-        params = self.best_params.copy()
-        if param_name in self.computed_tune_options:
-            self.tune_options[param_name] = self.computed_tune_options[param_name](params)
-            print(f"## Computed tune options: {param_name} = {self.tune_options[param_name]}")
-            if params[param_name] not in self.tune_options[param_name]:
-                if self.tune_options[param_name] != sorted(self.tune_options[param_name]):
-                    raise Exception(f"Computed tune options {param_name} = {self.tune_options[param_name]} not sorted")
-                # Use the value one-below the target value if target not found.
-                for i in range(len(self.tune_options[param_name])):
-                    if self.tune_options[param_name][i] > params[param_name]:
-                        break                
-                params[param_name] = self.tune_options[param_name][max(0,i-1)]
-                
-        current_idx = self.tune_options[param_name].index(params[param_name])
+        current_params = self._recalculate_tunable_params(self.best_params)        
+        current_idx = self.tune_options[param_name].index(current_params[param_name])
+
+        value_current = self.tune_options[param_name][current_idx]
+        values_up = self.tune_options[param_name][current_idx+1:]
+        values_down = self.tune_options[param_name][:current_idx][::-1]
+        print(f"Tuning {param_name}. Current->{value_current} Up->{values_up} Down->{values_down}")
+        
 
         # Try tuning from current_idx updwrds.
-        if self._tune_hyperparameter_range(params, param_name, range(current_idx+1, len(self.tune_options[param_name]))):
+        if self._tune_hyperparameter_range(current_params, param_name, values_up):
             return True
         # Try tuning from current_idx downwards.
-        if self._tune_hyperparameter_range(params, param_name, range(current_idx-1, -1, -1)):
+        if self._tune_hyperparameter_range(current_params, param_name, values_down):
             return True
         # No updates improved best_loss
         return False
