@@ -316,7 +316,7 @@ class Tuner:
         for generation in range(1, num_generations+1):
             self.generation = generation
             new_best_model_found_this_generation = False
-            for param_name in self.all_tune_keys:  # TODO: Sort these in a sensible way?
+            for param_name in self.all_tune_keys:
                 prev_best_loss = self.best_loss
                 prev_best_loss_elapsed = self.best_loss_elapsed
                 print(f"## Tuning generation {self.generation}: {param_name}")
@@ -326,8 +326,10 @@ class Tuner:
                 new_best_model_found_this_generation |= is_improved
             if not new_best_model_found_this_generation:
                 print(f"No updates for generation {generation}, stopping")
-                return new_best_model_found
+                return new_best_model_found, self.best_loss, self.best_loss_elapsed, self.best_params
             new_best_model_found = True
+        
+        return new_best_model_found, self.best_loss, self.best_loss_elapsed, self.best_params
 
 
     def _tune_hyperparameter_range(self, params, param_name, val_list) -> bool:
