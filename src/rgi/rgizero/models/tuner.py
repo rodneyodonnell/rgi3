@@ -316,6 +316,8 @@ class Tuner:
         for generation in range(1, num_generations+1):
             self.generation = generation
             new_best_model_found_this_generation = False
+            # TODO: Be smarter about chosing key order?
+            #       Maybe order keys by how often they outperform the the current parameter choice given the score function?
             for param_name in self.all_tune_keys:
                 prev_best_loss = self.best_loss
                 prev_best_loss_elapsed = self.best_loss_elapsed
