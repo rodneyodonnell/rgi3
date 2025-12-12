@@ -175,14 +175,6 @@ class Tuner:
         self.current_params = initial_params.copy()
         self.current_params.update(self.fixed_params)
 
-        # Create initial_param set to begin tuning from.
-        # default_params = train.Hyperparameters()
-        # self.initial_params = {k: (initial_params[k] if k in initial_params else getattr(default_params, k)) for k in tune_options.keys()}
-        # self.initial_params = {k: initial_params[k] for k in tune_options.keys()}
-        # for arg, val in self.initial_params.items():
-        #     if val not in tune_options[arg]:
-        #         raise Exception(f"Value {arg}={val} not in {tune_options[arg]}")
-
         self.best_params = None
         self.best_loss = None
         self.generation = 0
@@ -228,7 +220,7 @@ class Tuner:
                 self._save_model(param_key_hash, model)
         return loss_dict['val'], loss_dict['elapsed'], loss_dict, model
     
-    def maybe_update_best_param(self, loss, elapsed, params, loss_dict):
+    def maybe_update_best_param(self, loss, elapsed, params, loss_dict) -> bool:
         """If model is improved, add it to result_cache['best_model_trajectory']."""
         if self.best_loss is None:
             self.best_loss = loss
@@ -293,6 +285,43 @@ class Tuner:
                 raise ValueError(f"Current value {current_val} for {k} not in unsorted possible values {possible_vals}")
             
         return params
+
+    def select_candidate_params(self) -> list[tuple[str, dict[str, Any]]]:
+        """Create a list of potential hyperparameter configs to improve model"""
+        return [
+            ("unchanged", self.best_params.copy())
+        ]        
+
+
+    def autotune_smart(self, max_generations=20):
+        """Intelligently choose which hyperparameters to tune next."""
+        if self.best_loss is None:
+            print(f"Training initial model as baseline.")
+            recalculated_params = self._recalculate_tunable_params(self.current_params)
+            loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params)
+            self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
+            print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
+
+        generation = 0
+        improved = False
+        while generation < max_generations:
+            candidate_params_list = self.select_candidate_params()
+            if not self._find_improvement(candidate_params_list):
+                break
+            generation += 1
+            improved = True
+        return improved
+
+    
+    def _find_improvement(self, candidate_params_list):
+        for name, params in candidate_params_list:
+            print(f"Attempting channge '{name}'")
+            loss, elapsed, loss_dict, model = self.train_and_compute_loss(params)
+            is_improved = self.maybe_update_best_param(loss, elapsed, params, loss_dict)
+            print(f"## Model {name}, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
+            if is_improved:
+                return True
+        return False
 
     def autotune(self, num_generations=10) -> bool:
         """Autotune the model by training and evaluating it with different hyperparameters.
