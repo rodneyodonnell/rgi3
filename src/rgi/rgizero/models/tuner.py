@@ -1,3 +1,4 @@
+from collections import defaultdict
 import time
 import json
 import os
@@ -220,6 +221,9 @@ class Tuner:
                 self._save_model(param_key_hash, model)
         return loss_dict['val'], loss_dict['elapsed'], loss_dict, model
     
+    def calc_score(self, loss, elapsed):
+        return loss + elapsed * self.target_improvement_per_second
+
     def maybe_update_best_param(self, loss, elapsed, params, loss_dict) -> bool:
         """If model is improved, add it to result_cache['best_model_trajectory']."""
         if self.best_loss is None:
@@ -237,8 +241,8 @@ class Tuner:
             return True
         
         # lower loss is better, lower elapsed is better, so lower score is better.
-        best_loss_score = self.best_loss + self.best_loss_elapsed * self.target_improvement_per_second
-        current_loss_score = loss + elapsed * self.target_improvement_per_second
+        best_loss_score = self.calc_score(self.best_loss, self.best_loss_elapsed)
+        current_loss_score = self.calc_score(loss, elapsed)
         if current_loss_score >= best_loss_score:
             return False
 
@@ -286,11 +290,45 @@ class Tuner:
             
         return params
 
+
     def select_candidate_params(self) -> list[tuple[str, dict[str, Any]]]:
         """Create a list of potential hyperparameter configs to improve model"""
-        return [
-            ("unchanged", self.best_params.copy())
-        ]        
+        score_stats_raw = defaultdict(list)
+        for key, val in self.result_cache.items():
+            parsed_key = ast.literal_eval(key)
+            score = self.calc_score(val['val'], val['elapsed'])
+            score_stats_raw['ALL'].append(score)
+            for param_key, param_val in parsed_key:
+                score_stats_raw[(param_key, param_val)].append(score)
+            
+        score_stats = {k: sum(v)/len(v) for k,v in score_stats_raw.items()}
+
+        def calc_expected_score(params):
+            default_score = score_stats['ALL']
+            return sum(score_stats.get((param_key, param_val), default_score) for param_key, param_val in params.items()) / len(params)
+
+        def is_allowed_change(tunable_values, best_value, candidate_value) -> bool:
+            """Return truen if candidate_value is next to best_value in tunable_values""" 
+            pos1 = tunable_values.index(best_value)
+            pos2 = tunable_values.index(candidate_value)
+            return abs(pos1 - pos2) == 1
+
+        # TODO: Include computed-tuned-options.
+        candidate_list = []
+        for param_name, candidata_values in self.tune_options.items():
+            for candidata_value in candidata_values:
+                if not is_allowed_change(candidata_values, self.best_params[param_name], candidata_value):
+                    continue
+                candidate_params = self.best_params.copy()
+                candidate_params[param_name] = candidata_value
+                candidate_params = self._recalculate_tunable_params(candidate_params)
+                expected_score = calc_expected_score(candidate_params)
+                name = f'{param_name}={candidata_value}'
+                candidate_list.append((expected_score, name, candidate_params))
+        
+        sorted_candidates = sorted(candidate_list)
+        result = [(name, params) for (score, name, params) in sorted_candidates]
+        return result
 
 
     def autotune_smart(self, max_generations=20):
