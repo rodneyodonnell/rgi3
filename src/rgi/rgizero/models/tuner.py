@@ -106,7 +106,7 @@ def train_with(vocab_size, num_players, num_genrations, device, n_max_context, d
     # def train_model(model, training_splits, train_config):
     # loss_dict = train.train_and_evaluate(**overrides)
     elapsed = time.time() - t0
-    print(f"## train_loss: {loss_dict['train']:.4f}, val_loss: {loss_dict['val']:.4f}, Time taken: {elapsed}s, overrides={overrides}")
+    print(f"## train_loss: {loss_dict['train']:.4f}, val_loss: {loss_dict['val']:.4f}, Time taken: {elapsed}s, val_policy_loss: {loss_dict['val_policy']:.4f}, val_value_loss: {loss_dict['val_value']:.4f}, overrides={overrides}")
     return loss_dict, elapsed, model
 
 
@@ -231,6 +231,7 @@ class Tuner:
             self.best_loss = loss
             self.best_loss_elapsed = elapsed
             self.best_params = params.copy()
+            self.best_loss_dict = loss_dict.copy()
             self.best_model_trajectory.append({
                 'change': [],
                 'loss': loss,
@@ -250,9 +251,11 @@ class Tuner:
         prev_best_loss = self.best_loss
         prev_best_loss_elapsed = self.best_loss_elapsed
         prev_best_params = self.best_params
+        prev_best_loss_dict = self.best_loss_dict
         self.best_loss = loss
         self.best_loss_elapsed = elapsed
         self.best_params = params.copy()
+        self.best_loss_dict = loss_dict.copy()
 
         all_keys = sorted(set(self.best_params.keys()) | set(prev_best_params.keys()))
         changed_params = [{'k':k, 'old': prev_best_params.get(k), 'new':self.best_params.get(k)} for k in all_keys if prev_best_params.get(k) != self.best_params.get(k)]
@@ -341,9 +344,9 @@ class Tuner:
         if self.best_loss is None:
             print(f"Using initial model as baseline.")
             recalculated_params = self._recalculate_tunable_params(self.current_params)
-            loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params)
+            loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params, name='initial')
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
-            print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
+            print(f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s, val_policy={self.best_loss_dict.get('val_policy',-1):.4f}, val_value={self.best_loss_dict.get('val_value',-1):.4f}")
 
         generation = 0
         improved = False
