@@ -194,7 +194,7 @@ class Tuner:
     def _save_result_cache(self):
         json.dump(self.result_cache, open(self.cache_path, 'w'))
 
-    def train_and_compute_loss(self, params, reload_model=False) -> tuple[float, float]:
+    def train_and_compute_loss(self, params, reload_model=False, name=None) -> tuple[float, float]:
         """Look up loss in cache, or train model to compute it and save to cache."""
         param_key = str(sorted((k,v) for (k,v) in params.items() if k in self.all_tune_keys))
         param_key_hash = hashlib.sha256(param_key.encode('utf-8')).hexdigest()
@@ -204,6 +204,7 @@ class Tuner:
             model = self._load_model(param_key_hash) if reload_model else None
         else:
             try:
+                print(f'Training {name or str(params)}')
                 loss_dict, elapsed, model = train_with(**params)
                 loss_dict['elapsed'] = elapsed
                 loss_dict['param_hash'] = param_key_hash
@@ -273,7 +274,7 @@ class Tuner:
         for k,fn in self.computed_tune_options.items():
             current_val = params[k]
             possible_vals = fn(params)
-            self.tune_options[k] = possible_vals
+            # self.tune_options[k] = possible_vals
             # TODO: Find the closest option?
             if current_val in possible_vals:
                 continue
@@ -307,23 +308,27 @@ class Tuner:
             default_score = score_stats['ALL']
             return sum(score_stats.get((param_key, param_val), default_score) for param_key, param_val in params.items()) / len(params)
 
-        def is_allowed_change(tunable_values, best_value, candidate_value) -> bool:
+        def is_allowed_change(candidate_values, best_value, candidate_value) -> bool:
             """Return truen if candidate_value is next to best_value in tunable_values""" 
-            pos1 = tunable_values.index(best_value)
-            pos2 = tunable_values.index(candidate_value)
+            pos1 = candidate_values.index(best_value)
+            pos2 = candidate_values.index(candidate_value)
             return abs(pos1 - pos2) == 1
 
-        # TODO: Include computed-tuned-options.
+        # Include computed-tuned-options in search.
         candidate_list = []
-        for param_name, candidata_values in self.tune_options.items():
-            for candidata_value in candidata_values:
-                if not is_allowed_change(candidata_values, self.best_params[param_name], candidata_value):
+        computed_tune_options = {k:fn(self.best_params) for k,fn in self.computed_tune_options.items()}
+        all_tune_options = self.tune_options.copy()
+        all_tune_options.update(computed_tune_options)
+
+        for param_name, candidate_values in all_tune_options.items():
+            for candidate_value in candidate_values:
+                if not is_allowed_change(candidate_values, self.best_params[param_name], candidate_value):
                     continue
                 candidate_params = self.best_params.copy()
-                candidate_params[param_name] = candidata_value
+                candidate_params[param_name] = candidate_value
                 candidate_params = self._recalculate_tunable_params(candidate_params)
                 expected_score = calc_expected_score(candidate_params)
-                name = f'{param_name}={candidata_value}'
+                name = f'{param_name}: {self.best_params[param_name]} -> {candidate_value}'
                 candidate_list.append((expected_score, name, candidate_params))
         
         sorted_candidates = sorted(candidate_list)
@@ -334,7 +339,7 @@ class Tuner:
     def autotune_smart(self, max_generations=20):
         """Intelligently choose which hyperparameters to tune next."""
         if self.best_loss is None:
-            print(f"Training initial model as baseline.")
+            print(f"Using initial model as baseline.")
             recalculated_params = self._recalculate_tunable_params(self.current_params)
             loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params)
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
@@ -344,19 +349,20 @@ class Tuner:
         improved = False
         while generation < max_generations:
             candidate_params_list = self.select_candidate_params()
+            print(f"## Searching generation {generation} with {len(candidate_params_list)} candidates, including {[k for (k,v) in candidate_params_list[:5]]}")
             if not self._find_improvement(candidate_params_list):
                 break
             generation += 1
             improved = True
-        return improved
+
+        return improved, self.best_loss, self.best_loss_elapsed, self.best_params
 
     
     def _find_improvement(self, candidate_params_list):
         for name, params in candidate_params_list:
-            print(f"Attempting channge '{name}'")
-            loss, elapsed, loss_dict, model = self.train_and_compute_loss(params)
+            loss, elapsed, loss_dict, model = self.train_and_compute_loss(params, name=name)
             is_improved = self.maybe_update_best_param(loss, elapsed, params, loss_dict)
-            print(f"## Model {name}, loss={self.best_loss} elapsed={self.best_loss_elapsed}s")
+            print(f"## improved: {is_improved}, loss={loss:.4f} elapsed={elapsed:.2f}s, mutation {name}")
             if is_improved:
                 return True
         return False
