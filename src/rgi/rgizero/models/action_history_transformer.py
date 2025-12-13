@@ -68,7 +68,7 @@ class ActionHistoryTransformer(nn.Module):
         policy_target: Optional[torch.Tensor] = None,  # (B, T, num_actions)
         value_target: Optional[torch.Tensor] = None,  # (B, T, num_players)
         padding_mask: Optional[torch.Tensor] = None,  # (B, T)
-    ):
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor]:  # ((policy_logits, value_logits), loss_dict, loss)
         """Forward pass for ActionHistoryTransformer.
 
         Args:
@@ -90,6 +90,8 @@ class ActionHistoryTransformer(nn.Module):
         h = self.transformer(action_emb)  # (B, T, n_embd)
         h = self.ln_f(h)  # (B, T, n_embd)
 
+        loss_dict = {}
+
         if policy_target is not None or value_target is not None:
             policy_logits, value_logits = self.policy_value_head(h)
             flat_padding_mask = padding_mask.view(-1) if padding_mask is not None else None
@@ -107,6 +109,7 @@ class ActionHistoryTransformer(nn.Module):
                 # Calcualte the average loss per unpadded tokens.
                 # note: We may want to experiment with average per batch?
                 policy_loss = F.cross_entropy(flat_policy_logits, flat_policy_target, reduction="mean")
+                loss_dict['policy_loss'] = policy_loss
                 loss += policy_loss
 
             if value_target is not None:
@@ -118,6 +121,7 @@ class ActionHistoryTransformer(nn.Module):
                     flat_value_target = flat_value_target[flat_padding_mask]
                 validate_probabilities_or_die(flat_value_target)
                 value_loss = F.cross_entropy(flat_value_logits, flat_value_target, reduction="mean")
+                loss_dict['value_loss'] = value_loss
                 loss += value_loss
         else:
             # Inference mode: only compute logits for final position
@@ -125,7 +129,7 @@ class ActionHistoryTransformer(nn.Module):
             policy_logits, value_logits = self.policy_value_head(h_last)
             loss = None
 
-        return (policy_logits, value_logits), loss
+        return (policy_logits, value_logits), loss_dict, loss
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
         return TokenTransformer.configure_optimizers(self, weight_decay, learning_rate, betas, device_type)

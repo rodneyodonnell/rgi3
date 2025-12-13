@@ -101,12 +101,18 @@ class Trainer:
             data_iter = iter(loader)
             eval_iters = min(self.train_config.eval_iters, len(loader))
             losses = torch.zeros(eval_iters)
+            losses_policy = torch.zeros(eval_iters)
+            losses_value = torch.zeros(eval_iters)
             for k in range(eval_iters):
                 data_batch = next(data_iter)
                 with self.ctx:
-                    logits, loss = self.model(*data_batch)
+                    logits, loss_dict, loss = self.model(*data_batch)
                 losses[k] = loss.item()
+                losses_policy[k] = loss_dict['policy_loss'].item()
+                losses_value[k] = loss_dict['value_loss'].item()
             out[split] = losses.mean()
+            out[split + '_policy'] = losses_policy.mean()
+            out[split + '_value'] = losses_value.mean()
 
         self.model.train()  # put model back into training mode
         return out
@@ -152,10 +158,10 @@ class Trainer:
             # evaluate the loss on train/val sets and write checkpoints
             if self.iter_num % self.train_config.eval_interval == 0:
                 losses = self.estimate_loss()
-                print(f"step {self.iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+                print(f"step {self.iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val policy loss {losses['val_policy']:.4f}, val value loss {losses['val_value']:.4f}")
                 if self.train_config.wandb_log:
                     wandb.log(
-                        {"iter": self.iter_num, "train/loss": losses["train"], "val/loss": losses["val"], "lr": lr}
+                        {"iter": self.iter_num, "train/loss": losses["train"], "val/loss": losses["val"], "val_policy/loss": losses["val_policy"], "val_value/loss": losses["val_value"], "lr": lr}
                     )
                 if losses["val"] < self.best_val_loss or self.train_config.always_save_checkpoint:
                     self.best_val_loss = losses["val"]
@@ -178,7 +184,7 @@ class Trainer:
             for micro_step in range(self.train_config.gradient_accumulation_steps):
                 with self.ctx:
                     batch_id, data_batch = next(data_iter)
-                    logits, loss = self.model(*data_batch)
+                    logits, loss_dict, loss = self.model(*data_batch)
                     loss = (
                         loss / self.train_config.gradient_accumulation_steps
                     )  # scale the loss to account for gradient accumulation
@@ -206,7 +212,9 @@ class Trainer:
                 # get loss as float. note: this is a CPU-GPU sync point
                 # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
                 lossf = loss.item() * self.train_config.gradient_accumulation_steps
-                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, time {dt:.2f}s, iter_time: {ms_per_iter:.2f}ms")
+                policy_lossf = loss_dict['policy_loss'].item() * self.train_config.gradient_accumulation_steps
+                value_lossf = loss_dict['value_loss'].item() * self.train_config.gradient_accumulation_steps
+                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, policy_loss {policy_lossf:.4f}, value_loss {value_lossf:.4f}, time {dt:.2f}s, iter_time: {ms_per_iter:.2f}ms")
             self.iter_num += 1
 
             # termination conditions
