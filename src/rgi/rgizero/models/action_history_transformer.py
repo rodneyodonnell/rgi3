@@ -129,8 +129,10 @@ class ActionHistoryTransformer(nn.Module):
             # TODO: THis is broken??
             # h_last = h[:, encoded_len, :]  # (B, n_embd)
             # h_last = h[:, -1, :]  # (B, n_embd)
-            h_last = h[:, -1, :].squeeze(1)  # (B, n_embd)
+            # h_last = h[:, -1, :].squeeze(1)  # (B, n_embd)
             # h_last = h[:, encoded_len - 1, :]  # (B, n_embd)
+            ## TODO: What is the clean way to do this?
+            h_last = torch.stack([h[i][n-1] for (i,n) in enumerate(encoded_len)])
             policy_logits, value_logits = self.policy_value_head(h_last)
             loss = None
 
@@ -187,9 +189,10 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
 
         # Process model on GPU.
-        x_gpu = x_pinned.to(self.device, non_blocking=True)      
-        x_encoded_len = self._maybe_pin(torch.tensor(encoded_len)).to(self.device, non_blocking=True)
-        (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=x_encoded_len)
+        x_gpu = x_pinned.to(self.device, non_blocking=True)   
+        encoded_len_pinned = self._maybe_pin(torch.tensor(encoded_len))
+        encoded_len_gpu = encoded_len_pinned.to(self.device, non_blocking=True)
+        (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=encoded_len_gpu)
 
         # Calculate legal_policy_mask on CPU
         legal_policy_mask_np = np.zeros(policy_logits_gpu.shape, dtype=np.bool_)
