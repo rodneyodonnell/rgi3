@@ -188,8 +188,14 @@ class Tuner:
     def _load_model(self, param_key_hash):
         path = f'{self.model_cache_root}/{param_key_hash}.pt'
         if os.path.exists(path):
-            return torch.load(path)
+            # TODO: weights_only=False has security issues ... we trust the source so fine for now.
+            return torch.load(path, weights_only=False)
         return None
+    
+    def load_best_model(self):
+        param_hash = self.best_loss_dict['param_hash']
+        model = self._load_model(param_hash)
+        return model
 
     def _save_result_cache(self):
         json.dump(self.result_cache, open(self.cache_path, 'w'))
@@ -370,7 +376,8 @@ class Tuner:
                 return True
         return False
 
-    def autotune(self, num_generations=10) -> bool:
+    # TODO: Deprecated. delete.
+    def _autotune(self, num_generations=10) -> bool:
         """Autotune the model by training and evaluating it with different hyperparameters.
         
         Algorithm:

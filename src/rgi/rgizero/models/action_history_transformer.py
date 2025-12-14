@@ -68,6 +68,7 @@ class ActionHistoryTransformer(nn.Module):
         policy_target: Optional[torch.Tensor] = None,  # (B, T, num_actions)
         value_target: Optional[torch.Tensor] = None,  # (B, T, num_players)
         padding_mask: Optional[torch.Tensor] = None,  # (B, T)
+        encoded_len: Optional[torch.Tensor] = None,  # (B)
     ) -> tuple[tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor]:  # ((policy_logits, value_logits), loss_dict, loss)
         """Forward pass for ActionHistoryTransformer.
 
@@ -125,7 +126,11 @@ class ActionHistoryTransformer(nn.Module):
                 loss += value_loss
         else:
             # Inference mode: only compute logits for final position
-            h_last = h[:, -1, :]  # (B, n_embd)
+            # TODO: THis is broken??
+            # h_last = h[:, encoded_len, :]  # (B, n_embd)
+            # h_last = h[:, -1, :]  # (B, n_embd)
+            h_last = h[:, -1, :].squeeze(1)  # (B, n_embd)
+            # h_last = h[:, encoded_len - 1, :]  # (B, n_embd)
             policy_logits, value_logits = self.policy_value_head(h_last)
             loss = None
 
@@ -162,16 +167,29 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         B = len(states_list)
         L = self.block_size
 
+        # encode rows
+        encoded_rows = []
+        encoded_len = []
+        max_encoded_len = 0
+        for state in states_list:
+            encoded = self.vocab.encode(state.action_history)
+            encoded_rows.append(encoded)
+            encoded_len.append(len(encoded))
+        max_encoded_len = max(encoded_len)
+
+        if max_encoded_len > L:
+            raise ValueError(f"max_encoded_len {max_encoded_len} > block_size {L}")
+        
         # Start with zeros to simplify padding.
-        x_np = np.zeros((B, L), dtype=np.int32)
-        for i, state in enumerate(states_list):
-            encoded_row = self.vocab.encode(state.action_history)[-self.block_size :]
+        x_np = np.zeros((B, max_encoded_len), dtype=np.int32)
+        for i, encoded_row in enumerate(encoded_rows):
             x_np[i, :len(encoded_row)] = encoded_row
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
 
         # Process model on GPU.
-        x_gpu = x_pinned.to(self.device, non_blocking=True)
-        (policy_logits_gpu, value_logits_gpu), _ = self.model(x_gpu)
+        x_gpu = x_pinned.to(self.device, non_blocking=True)      
+        x_encoded_len = self._maybe_pin(torch.tensor(encoded_len)).to(self.device, non_blocking=True)
+        (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=x_encoded_len)
 
         # Calculate legal_policy_mask on CPU
         legal_policy_mask_np = np.zeros(policy_logits_gpu.shape, dtype=np.bool_)
