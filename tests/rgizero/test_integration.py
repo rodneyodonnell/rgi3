@@ -75,8 +75,8 @@ class TestShakespeareIntegration:
         # Test initial state
         assert trainer.iter_num == 0
         initial_losses = trainer.estimate_loss()
-        _initial_train_loss = initial_losses["train"].item()
-        _initial_val_loss = initial_losses["val"].item()
+        _initial_train_loss = initial_losses["train"]
+        _initial_val_loss = initial_losses["val"]
 
         # Train the model
         trainer.train()
@@ -86,8 +86,8 @@ class TestShakespeareIntegration:
 
         # Check that loss changed (should improve or at least change)
         final_losses = trainer.estimate_loss()
-        final_train_loss = final_losses["train"].item()
-        final_val_loss = final_losses["val"].item()
+        final_train_loss = final_losses["train"]
+        final_val_loss = final_losses["val"]
 
         # Losses should be finite
         assert torch.isfinite(torch.tensor(final_train_loss))

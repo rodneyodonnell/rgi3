@@ -46,12 +46,13 @@ class TokenTransformer(nn.Module):
             # if we are given some desired targets also calculate the loss
             logits = self.lm_head(x)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            loss_dict = {}
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :])  # note: using list [-1] to preserve the time dim
             loss = None
+            loss_dict = None
 
-        loss_dict = {}
         return logits, loss_dict, loss
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
@@ -69,7 +70,7 @@ class TokenTransformer(nn.Module):
             ctx = self.config.n_max_context if hasattr(self.config, "n_max_context") else self.config.block_size
             idx_cond = idx if idx.size(1) <= ctx else idx[:, -ctx:]
             # forward the model to get the logits for the index in the sequence
-            logits, _ = self(idx_cond)
+            logits, _, _ = self(idx_cond)
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options

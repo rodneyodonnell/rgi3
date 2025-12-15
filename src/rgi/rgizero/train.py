@@ -155,11 +155,10 @@ class Trainer:
             # evaluate the loss on train/val sets and write checkpoints
             if self.iter_num % self.train_config.eval_interval == 0:
                 losses = self.estimate_loss()
-                print(f"step {self.iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, val policy loss {losses['val_policy']:.4f}, val value loss {losses['val_value']:.4f}")
+                loss_str = ', '.join(f'{k}:{v:.4f}' for k,v in losses.items())
+                print(f"step {self.iter_num}: losses: {loss_str}")
                 if self.train_config.wandb_log:
-                    wandb.log(
-                        {"iter": self.iter_num, "train/loss": losses["train"], "val/loss": losses["val"], "val_policy/loss": losses["val_policy"], "val_value/loss": losses["val_value"], "lr": lr}
-                    )
+                    wandb.log({"iter": self.iter_num, "lr": lr, **losses})
                 if losses["val"] < self.best_val_loss or self.train_config.always_save_checkpoint:
                     self.best_val_loss = losses["val"]
                     if self.iter_num > 0:
@@ -208,10 +207,10 @@ class Trainer:
                 ms_per_iter = (1_000 * dt / d_iter) if d_iter else 0
                 # get loss as float. note: this is a CPU-GPU sync point
                 # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+                loss_str = ', '.join(f'{k}:{v * self.train_config.gradient_accumulation_steps:.4f}' for k,v in loss_dict.items())
+
                 lossf = loss.item() * self.train_config.gradient_accumulation_steps
-                policy_lossf = loss_dict['policy_loss'].item() * self.train_config.gradient_accumulation_steps
-                value_lossf = loss_dict['value_loss'].item() * self.train_config.gradient_accumulation_steps
-                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, policy_loss {policy_lossf:.4f}, value_loss {value_lossf:.4f}, time {dt:.2f}s, iter_time: {ms_per_iter:.2f}ms")
+                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, {loss_str}, time {dt:.2f}s, iter_time: {ms_per_iter:.2f}ms")
             self.iter_num += 1
 
             # termination conditions
