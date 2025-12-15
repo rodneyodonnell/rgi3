@@ -56,10 +56,14 @@ class TestActionHistoryTransformer:
         policy_target_row = torch.rand(seq_len, vocab_size)
         value_target_row = torch.rand(seq_len, num_players)
 
+        # normalize
+        policy_target_row = (policy_target_row / policy_target_row.sum(axis=1).unsqueeze(1))
+        value_target_row = (value_target_row / value_target_row.sum(axis=1).unsqueeze(1))
+
         def get_loss(padding_mask):
             batch_size = padding_mask.shape[0] if padding_mask is not None else 1
 
-            (policy_logits, value_logits), loss = model(
+            (policy_logits, value_logits), loss_dict, loss = model(
                 torch.tile(idx_row, (batch_size, 1)),
                 policy_target=torch.tile(policy_target_row, (batch_size, 1)),
                 value_target=torch.tile(value_target_row, (batch_size, 1)),
