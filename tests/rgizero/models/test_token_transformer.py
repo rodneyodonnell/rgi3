@@ -33,9 +33,10 @@ class TestTokenTransformer:
         idx = torch.randint(0, vocab_size, (batch_size, seq_len))
 
         # When no targets provided, model returns only the last position for efficiency
-        logits, loss = model(idx)
+        logits, loss_dict, loss = model(idx)
         assert logits.shape == (batch_size, 1, vocab_size)  # Only last position
         assert loss is None
+        assert loss_dict is None
 
     def test_forward_with_targets(self):
         """Test forward pass with targets (for training)."""
@@ -47,7 +48,7 @@ class TestTokenTransformer:
         idx = torch.randint(0, vocab_size, (batch_size, seq_len))
         targets = torch.randint(0, vocab_size, (batch_size, seq_len))
 
-        logits, loss = model(idx, targets)
+        logits, loss_dict, loss = model(idx, targets)
 
         assert logits.shape == (batch_size, seq_len, vocab_size)
         assert loss.dim() == 0  # Scalar loss

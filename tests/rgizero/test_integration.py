@@ -141,7 +141,7 @@ class TestShakespeareIntegration:
         y = y.unsqueeze(0)
 
         # Forward pass
-        logits, loss = model(x, y)
+        logits, loss_dict, loss = model(x, y)
 
         # Check shapes
         assert logits.shape == (1, 8, vocab_size)
