@@ -178,6 +178,7 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
     def __getitem__(self, trajectory_idx: int) -> TrajectoryTuple:
         return self.read_trajectory(trajectory_idx, apply_padding=True)
 
+
     def read_trajectory(self, trajectory_idx: int, apply_padding: bool) -> TrajectoryTuple:
         action_start_idx = self.boundaries[trajectory_idx]
         action_end_idx = self.boundaries[trajectory_idx + 1]
@@ -272,6 +273,7 @@ def build_trajectory_loader(
         pin_memory=use_pin_memory,
         collate_fn=collate_fn,
         generator=torch.Generator().manual_seed(42),
+        persistent_workers=(workers > 0),
     )  # type: ignore
 
     val_loader = DataLoader(
@@ -282,6 +284,7 @@ def build_trajectory_loader(
         pin_memory=use_pin_memory,
         collate_fn=collate_fn,
         generator=torch.Generator().manual_seed(42),
+        persistent_workers=(workers > 0),
     )  # type: ignore
 
     return train_loader, val_loader

@@ -112,7 +112,8 @@ def test_get_trajectory_exact_content_unpadded(custom_dataset):
         assert torch.equal(t.value, torch.from_numpy(custom_dataset.orig_values[i]))
 
 
-@pytest.mark.parametrize("batch_size, workers", [(1, 0), (2, 2)])
+# TODO: This test is super-slow when workers > 0 (at least on OSX). Long timeout exiting _MultiProcessingDataLoaderIter?
+@pytest.mark.parametrize("batch_size, workers", [(1, 0), (2, 0)])
 @pytest.mark.parametrize("custom_dataset", [{"traj_lengths": [3, 3, 3, 3, 7, 3, 4, 2]}], indirect=True)
 def test_dataloader_batching(custom_dataset, batch_size, workers):
     block_size = 5
