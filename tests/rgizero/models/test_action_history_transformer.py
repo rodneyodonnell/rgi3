@@ -104,11 +104,44 @@ class TestActionHistoryTransformer:
 
         idx = torch.randint(0, vocab_size, (batch_size, seq_len))
 
-        (policy_logits, value_logits), loss = model(idx)
+        (policy_logits, value_logits), loss_dict, loss = model(idx)
 
-        assert policy_logits.shape == (batch_size, vocab_size)
-        assert value_logits.shape == (batch_size, num_players)
+        assert policy_logits.shape == (batch_size, 1, vocab_size)
+        assert value_logits.shape == (batch_size, 1, num_players)
         assert loss is None
+
+    def test_forward_inference_mode_with_len(self, action_history_transformer):
+        model = action_history_transformer
+        batch_size, seq_len = 3, 6
+        vocab_size = model.action_vocab_size
+        num_players = model.num_players
+
+        idx = torch.randint(0, vocab_size, (batch_size, seq_len))
+
+        encoded_len_1 = torch.tensor([2,4,2])
+        (policy_logits_1, value_logits_1), loss_dict_1, loss_1 = model(idx, encoded_len=encoded_len_1)
+
+        assert policy_logits_1.shape == (batch_size, 1, vocab_size)
+        assert value_logits_1.shape == (batch_size, 1, num_players)
+        assert loss_1 is None
+
+        encoded_len_2 = torch.tensor([3,4,6])
+        (policy_logits_2, value_logits_2), _, _ = model(idx, encoded_len=encoded_len_2)
+
+        assert torch.all(policy_logits_1[0] != policy_logits_2[0])
+        assert torch.all(policy_logits_1[1] == policy_logits_2[1])
+        assert torch.all(policy_logits_1[2] != policy_logits_2[2])
+
+        assert torch.all(value_logits_1[0] != value_logits_2[0])
+        assert torch.all(value_logits_1[1] == value_logits_2[1])
+        assert torch.all(value_logits_1[2] != value_logits_2[2])
+
+        # _last is the last element, so expect logits_2[2] == logits_last[2] 
+        (policy_logits_last, value_logits_last), _, _ = model(idx)
+        assert torch.all(policy_logits_last[2] != policy_logits_1[2])
+        assert torch.all(value_logits_last[2] != value_logits_1[2])
+        assert torch.all(policy_logits_last[2] == policy_logits_2[2])
+        assert torch.all(value_logits_last[2] == value_logits_2[2])
 
 
 class TestActionHistoryTransformerEvaluator:

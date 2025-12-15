@@ -126,13 +126,11 @@ class ActionHistoryTransformer(nn.Module):
                 loss += value_loss
         else:
             # Inference mode: only compute logits for final position
-            # TODO: THis is broken??
-            # h_last = h[:, encoded_len, :]  # (B, n_embd)
-            # h_last = h[:, -1, :]  # (B, n_embd)
-            # h_last = h[:, -1, :].squeeze(1)  # (B, n_embd)
-            # h_last = h[:, encoded_len - 1, :]  # (B, n_embd)
-            ## TODO: What is the clean way to do this?
-            h_last = torch.stack([h[i][n-1] for (i,n) in enumerate(encoded_len)])
+            if encoded_len is not None:
+                batch_idx = torch.arange(B, device=h.device)
+                h_last = h[batch_idx, encoded_len-1].unsqueeze(1)
+            else:
+                h_last = h[:,[-1],:]
             policy_logits, value_logits = self.policy_value_head(h_last)
             loss = None
 
