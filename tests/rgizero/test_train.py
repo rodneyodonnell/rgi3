@@ -90,10 +90,8 @@ class TestTrainer:
 
         assert "train" in losses
         assert "val" in losses
-        assert isinstance(losses["train"], torch.Tensor)
-        assert isinstance(losses["val"], torch.Tensor)
-        assert losses["train"].dim() == 0  # Scalar
-        assert losses["val"].dim() == 0  # Scalar
+        assert isinstance(losses["train"], float)
+        assert isinstance(losses["val"], float)
 
     def test_training_step_basics(self, simple_setup):
         """Test basic training step functionality."""
