@@ -185,8 +185,8 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         # Suppress warning about non-writable arrays since we only read from tensors
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
-            # action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
-            action = torch.from_numpy(self.vocab.encode([TOKENS.START_OF_GAME] + self.action_data[action_start_idx:action_end_idx].tolist()))
+            action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
+            # action = torch.from_numpy(self.vocab.encode([TOKENS.START_OF_GAME] + self.action_data[action_start_idx:action_end_idx].tolist()))
             policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
             # TODO: value_data repeatedly stores the same value... we should just store it once per trajectory.
             # For now, store per-step values to match tests and pad/truncate like actions/policies.
@@ -195,11 +195,13 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         if apply_padding:
             action_len = action_end_idx - action_start_idx
             pad_len = self.block_size - action_len
-            action = torch.nn.functional.pad(action, (0, pad_len-1))  # -1 because we add start token.
+            action = torch.nn.functional.pad(action, (0, pad_len))
             policy = torch.nn.functional.pad(policy, (0, 0, 0, pad_len))
             value = torch.nn.functional.pad(value, (0, 0, 0, pad_len))
             padding_mask = torch.zeros(self.block_size, dtype=torch.bool)
             padding_mask[:action_len] = True
+        else:
+            padding_mask = None
 
         return TrajectoryTuple(action, policy, value, padding_mask)
 
@@ -226,6 +228,7 @@ def build_trajectory_loader(
     device: str | torch.device | None = None,
     workers: int = 4,
     shuffle: bool = True,
+    val_split_prop: float = 0.1,
 ) -> tuple[DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]]:
 
     if isinstance(splits, str):  # allow single split to be passed as a string
@@ -237,9 +240,11 @@ def build_trajectory_loader(
         datasets.append(split_ds)
     full_dataset = torch.utils.data.ConcatDataset(datasets)
 
-    val_size = int(len(full_dataset) * 0.1)
+    val_size = int(len(full_dataset) * val_split_prop)
     train_size = len(full_dataset) - val_size
     generator = torch.Generator().manual_seed(42)
+    if train_size == 0 or val_size == 0:
+        raise ValueError("Not enough data to split into train and validation sets, train_size={train_size}, val_size={val_size}")
     train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size], generator=generator)
 
     # Create device-aware collate function if device is specified
