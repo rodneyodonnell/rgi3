@@ -18,6 +18,7 @@ uv.lock.backup
 # ignore output dirs
 /data/
 /models/
+/notebooks/models/
 
 # Ignore scratch notebooks
 notebooks/scratch/

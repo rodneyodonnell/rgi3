@@ -51,7 +51,8 @@ class TokenTransformer(nn.Module):
             logits = self.lm_head(x[:, [-1], :])  # note: using list [-1] to preserve the time dim
             loss = None
 
-        return logits, loss
+        loss_dict = {}
+        return logits, loss_dict, loss
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
         return configure_optimizers(self, weight_decay, learning_rate, betas, device_type)
