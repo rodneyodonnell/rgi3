@@ -1,6 +1,7 @@
 import pytest
 import torch
 import numpy as np
+import random
 
 from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer, ActionHistoryTransformerEvaluator
 from rgi.rgizero.models.transformer import TransformerConfig
@@ -167,8 +168,9 @@ class TestActionHistoryTransformerEvaluator:
         state = game.initial_state()
         for _ in range(num_states):
             states.append(state)
-            legal_actions_list.append(game.legal_actions(state))
-            action = game.all_actions()[0]  # Take a dummy action to advance state
+            legal_actions = game.legal_actions(state)
+            legal_actions_list.append(legal_actions)
+            action = random.choice(legal_actions)  # Take a random action to advance state
             state = game.next_state(state, action)
 
         results = evaluator.evaluate_batch(game, states, legal_actions_list)

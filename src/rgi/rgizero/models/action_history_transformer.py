@@ -192,6 +192,9 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         encoded_len_gpu = encoded_len_pinned.to(self.device, non_blocking=True)
         (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=encoded_len_gpu)
 
+        policy_logits_gpu = policy_logits_gpu.squeeze(1)
+        value_logits_gpu = value_logits_gpu.squeeze(1)
+
         # Calculate legal_policy_mask on CPU
         legal_policy_mask_np = np.zeros(policy_logits_gpu.shape, dtype=np.bool_)
         for i, legal_actions in enumerate(legal_actions_list):
