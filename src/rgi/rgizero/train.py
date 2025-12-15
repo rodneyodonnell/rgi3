@@ -6,6 +6,7 @@ import dataclasses
 import math
 import time
 import os
+from collections import defaultdict
 
 import torch
 import torch.nn as nn
@@ -98,14 +99,18 @@ class Trainer:
         self.model.eval()  # put model in evaluation mode
 
         for split, loader in [("train", self.train_loader), ("val", self.val_loader)]:
+            loss_sums = defaultdict(float)
             data_iter = iter(loader)
-            losses = torch.zeros(self.train_config.eval_iters)
-            for k in range(self.train_config.eval_iters):
-                X, Y = next(data_iter)
+            eval_iters = min(self.train_config.eval_iters, len(loader))
+            for k in range(eval_iters):
+                data_batch = next(data_iter)
                 with self.ctx:
-                    logits, loss = self.model(X, Y)
-                losses[k] = loss.item()
-            out[split] = losses.mean()
+                    logits, loss_dict, loss = self.model(*data_batch)
+                loss_sums[split] += loss.item()
+                for k,v in loss_dict.items():
+                    loss_sums[split + '_' + k] += v.item()
+                loss_average = {k: v/eval_iters for k,v in loss_sums.items()}
+                out.update(loss_average)
 
         self.model.train()  # put model back into training mode
         return out
@@ -128,15 +133,20 @@ class Trainer:
 
     def train(self):
         for epoch_id in range(self.train_config.max_epochs):
-            self.train_epoch()
+            self.train_epoch(epoch_id)
             # termination conditions
             if self.iter_num > self.train_config.max_iters:
                 break
 
-    def train_epoch(self):
+    def train_epoch(self, epoch_id):
+        self.model.train()
+        assert torch.is_grad_enabled(), "Gradient should be enabled for training"
         data_iter = enumerate(self.train_loader)
+        # Stop when the train_loader has been iterated over, or when we hit the global max_iters.
+        max_iters = min(self.iter_num + len(self.train_loader), self.train_config.max_iters)
+        t0 = time.time()
+        t0_iter = self.iter_num
         while True:
-            t0 = time.time()
             # determine and set the learning rate for this iteration
             lr = self.get_lr(self.iter_num) if self.train_config.decay_lr else self.train_config.learning_rate
             for param_group in self.optimizer.param_groups:
@@ -145,11 +155,10 @@ class Trainer:
             # evaluate the loss on train/val sets and write checkpoints
             if self.iter_num % self.train_config.eval_interval == 0:
                 losses = self.estimate_loss()
-                print(f"step {self.iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+                loss_str = ', '.join(f'{k}:{v:.4f}' for k,v in losses.items())
+                print(f"step {self.iter_num}: losses: {loss_str}")
                 if self.train_config.wandb_log:
-                    wandb.log(
-                        {"iter": self.iter_num, "train/loss": losses["train"], "val/loss": losses["val"], "lr": lr}
-                    )
+                    wandb.log({"iter": self.iter_num, "lr": lr, **losses})
                 if losses["val"] < self.best_val_loss or self.train_config.always_save_checkpoint:
                     self.best_val_loss = losses["val"]
                     if self.iter_num > 0:
@@ -170,8 +179,8 @@ class Trainer:
             # and using the GradScaler if data type is float16
             for micro_step in range(self.train_config.gradient_accumulation_steps):
                 with self.ctx:
-                    batch_id, (X, Y) = next(data_iter)
-                    logits, loss = self.model(X, Y)
+                    batch_id, data_batch = next(data_iter)
+                    logits, loss_dict, loss = self.model(*data_batch)
                     loss = (
                         loss / self.train_config.gradient_accumulation_steps
                     )  # scale the loss to account for gradient accumulation
@@ -187,17 +196,23 @@ class Trainer:
             # flush the gradients as soon as we can, no need for this memory anymore
             self.optimizer.zero_grad(set_to_none=True)
 
-            # timing and logging
-            t1 = time.time()
-            dt = t1 - t0
-            t0 = t1
             if self.iter_num % self.train_config.log_interval == 0:
+                # timing and logging
+                t1 = time.time()
+                t1_iter = self.iter_num
+                dt = t1 - t0
+                d_iter = t1_iter - t0_iter
+                t0 = t1
+                t0_iter = t1_iter
+                ms_per_iter = (1_000 * dt / d_iter) if d_iter else 0
                 # get loss as float. note: this is a CPU-GPU sync point
                 # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+                loss_str = ', '.join(f'{k}:{v * self.train_config.gradient_accumulation_steps:.4f}' for k,v in loss_dict.items())
+
                 lossf = loss.item() * self.train_config.gradient_accumulation_steps
-                print(f"iter {self.iter_num}: loss {lossf:.4f}, time {dt * 1000:.2f}ms")
+                print(f"iter {self.iter_num}/{max_iters}/{self.train_config.max_iters}: loss {lossf:.4f}, {loss_str}, time {dt:.2f}s, iter_time: {ms_per_iter:.2f}ms")
             self.iter_num += 1
 
             # termination conditions
-            if self.iter_num > self.train_config.max_iters:
+            if self.iter_num >= max_iters:
                 break
