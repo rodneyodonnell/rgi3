@@ -143,11 +143,15 @@ class ActionHistoryTransformer(nn.Module):
 class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     """Neural network evaluator for MCTS."""
 
-    def __init__(self, model: ActionHistoryTransformer, device: str, block_size: int, vocab: Vocab):
+    def __init__(self, model: ActionHistoryTransformer, device: str, block_size: int, vocab: Vocab, verbose=True):
         self.model = model.eval()
         self.device = device
         self.block_size = block_size
         self.vocab = vocab
+        self.verbose = verbose
+        self.total_time = 0.0
+        self.total_evals = 0
+        self.total_batches = 0
 
     @override
     @torch.no_grad()
@@ -167,6 +171,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         B = len(states_list)
         L = self.block_size
 
+        t0 = time.time()
         # encode rows
         encoded_rows = []
         encoded_len = []
@@ -218,6 +223,12 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_policy_mask_np)):
             legal_policy = policy_np[mask]
             ret[i] = NetworkEvaluatorResult(legal_policy, value_np)
+        t1 = time.time()
+        self.total_time += t1 - t0
+        self.total_evals += len(states_list)
+        self.total_batches += 1
+        if self.verbose and self.total_batches % 1000 == 0:
+            print(f"Evaluation time: {t1 - t0:.3f} seconds, size={len(states_list)}, eval-per-second={len(states_list)/(t1 - t0):.2f}, total-batches={self.total_batches}, mean-eval-per-second={self.total_evals/self.total_time:.2f}, mean-time-per-batch={self.total_time/self.total_batches:.3f}, mean-batch-size={self.total_evals/self.total_batches:.2f}")
         return ret
 
 
