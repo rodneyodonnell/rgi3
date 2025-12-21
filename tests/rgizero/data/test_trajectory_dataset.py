@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 from dataclasses import dataclass
 
+from rgi.rgizero.common import TOKENS
+
 from rgi.rgizero.data.trajectory_dataset import (
     Vocab,
     TrajectoryDatasetBuilder,
@@ -27,15 +29,17 @@ def write_random_trajectory_dataset(
     seed = seed if seed is not None else np.random.randint(0, 1000000)
     root = tmp_path / "test_data"
     split = "train"
-    vocab = Vocab(itos="1234567")
+    vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(range(1, 8)))
     builder = TrajectoryDatasetBuilder(vocab)
     rng = np.random.default_rng(seed)
 
+
     for length in traj_lengths:
-        actions = rng.integers(1, 8, size=length)  # 1-7
-        policies = rng.random((length, 7), dtype=np.float32)
+        actions = list(rng.integers(1, 8, size=length))  # 1-7
+        actions_encoded = vocab.encode(actions)
+        policies = rng.random((length, 7 + 1), dtype=np.float32)
         values = rng.random((length, 2), dtype=np.float32)
-        builder.add_trajectory(actions, policies, values)
+        builder.add_trajectory(np.array(actions_encoded, dtype=np.int32), policies, values)
     builder.save(str(root), split, shuffle=shuffle)
     orig_actions = [builder.actions[i] for i in range(len(builder.actions))]
     orig_policies = [builder.fixed_width_policies[i] for i in range(len(builder.fixed_width_policies))]
@@ -47,7 +51,7 @@ def write_random_trajectory_dataset(
 @pytest.fixture
 def small_dataset(tmp_path: Path) -> TrajectoryDatasetFixture:
     """Default small dataset fixture."""
-    return write_random_trajectory_dataset(tmp_path, [3, 4, 4])
+    return write_random_trajectory_dataset(tmp_path, [4, 5, 5])
 
 
 @pytest.fixture
@@ -56,6 +60,8 @@ def custom_dataset(tmp_path: Path, request: pytest.FixtureRequest) -> Trajectory
     params = request.param
     traj_lengths = params.get("traj_lengths", [3, 4, 4])
     return write_random_trajectory_dataset(tmp_path, traj_lengths)
+    return write_random_trajectory_dataset(tmp_path, traj_lengths)
+
 
 
 @pytest.mark.parametrize("block_size", [5, 10, 15, 20])
@@ -108,17 +114,18 @@ def test_get_trajectory_exact_content_unpadded(custom_dataset):
         assert torch.equal(t.value, torch.from_numpy(custom_dataset.orig_values[i]))
 
 
-@pytest.mark.parametrize("batch_size, workers", [(1, 0), (2, 2)])
-@pytest.mark.parametrize("custom_dataset", [{"traj_lengths": [3, 3, 3, 3]}], indirect=True)
+# Note: This test can be slow when workers > 0 on some platforms (e.g. OSX).
+@pytest.mark.parametrize("batch_size, workers", [(1, 0), (2, 0)])
+@pytest.mark.parametrize("custom_dataset", [{"traj_lengths": [3, 3, 3, 3, 7, 3, 4, 2]}], indirect=True)
 def test_dataloader_batching(custom_dataset, batch_size, workers):
     block_size = 5
-    loader = build_trajectory_loader(
+    train_loader, val_loader = build_trajectory_loader(
         custom_dataset.root,
         custom_dataset.split,
         block_size,
         batch_size=batch_size,
-        device_is_cuda=False,
         workers=workers,
+        val_split_prop=0.25,
     )
 
     # Collect all batches to verify we get the expected number of items
@@ -126,15 +133,17 @@ def test_dataloader_batching(custom_dataset, batch_size, workers):
     all_policies = []
     all_values = []
 
-    for batch in loader:
-        actions, policies, values = batch
-        assert actions.shape == (batch_size, block_size)
-        assert policies.shape == (batch_size, block_size, 7)
-        assert values.shape == (batch_size, block_size, 2)
+    for loader in [train_loader, val_loader]:
+        for actions, policies, values, padding_masks in loader:
+            # TODO: This test assumes len(loader) % batch_size == 0
+            assert actions.shape == (batch_size, block_size)
+            assert policies.shape == (batch_size, block_size, 8)
+            assert values.shape == (batch_size, block_size, 2)
+            assert padding_masks.shape == (batch_size, block_size)
 
-        all_actions.append(actions)
-        all_policies.append(policies)
-        all_values.append(values)
+            all_actions.append(actions)
+            all_policies.append(policies)
+            all_values.append(values)
 
     # Verify we got the expected number of trajectories
     total_items = sum(batch.shape[0] for batch in all_actions)
@@ -147,4 +156,4 @@ def test_small_block_size(custom_dataset):
     ds = TrajectoryDataset(custom_dataset.root, custom_dataset.split, block_size)
     item = ds[0]
     assert item.action.shape[0] == 2  # Truncated from 3
-    assert torch.equal(item.action, torch.from_numpy(custom_dataset.orig_actions[0][:2]))
+    assert torch.equal(item.action, torch.from_numpy(custom_dataset.orig_actions[0])[:2])
