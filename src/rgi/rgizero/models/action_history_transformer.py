@@ -1,5 +1,5 @@
 """
-Multitask transformer from action-histyry to Policy and Value heads.
+Multitask transformer from action-history to Policy and Value heads.
 """
 
 from typing import override, Optional, Any
@@ -20,6 +20,7 @@ from rgi.rgizero.models.transformer import TransformerConfig, Transformer, Layer
 from rgi.rgizero.models.token_transformer import TokenTransformer
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
+from rgi.rgizero.utils import validate_probabilities_or_die
 
 
 # TODO: Move to util class.

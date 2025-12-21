@@ -545,24 +545,20 @@ class IncrementalTreeCache:
             action_idx = node.action_to_index(action)
             node = node.children[action_idx]
             if node is None:
-                # raise ValueError(f"Action {action} not found in tree for trajectory {trajectory} at index {i}")
                 return None
         return node
 
     def get_tree(self, trajectory: list[Any], update: bool = False) -> MCTSNode | None:
-        """Lookup and optionally update incremental tree. Raises ValueError on trajectory mismatch or subtree not found."""
+        """Lookup and optionally update incremental tree. Returns None on trajectory mismatch or subtree not found."""
         if self._tree is None:
             raise ValueError("Incremental tree not set")
         if trajectory[: len(self._trajectory)] != self._trajectory:
             # This can happen if the child has not been explored yet.
             return None
-            # raise ValueError(
-            #     f"Incremental trajectory mismatch, stored trajectory: {self._trajectory}, not prefix of requested trajectory: {trajectory}"
-            # )
         if len(trajectory) == len(self._trajectory):
             return self._tree
 
         ret = self._get_tree(self._tree, len(self._trajectory), trajectory)
-        if update:
+        if update and ret is not None:
             self.set_incremental_tree(ret, trajectory)
         return ret
