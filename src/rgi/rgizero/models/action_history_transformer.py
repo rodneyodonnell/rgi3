@@ -1,5 +1,5 @@
 """
-Multitask transformer from action-histyry to Policy and Value heads.
+Multitask transformer from action-history to Policy and Value heads.
 """
 
 from typing import override, Optional, Any
@@ -20,6 +20,7 @@ from rgi.rgizero.models.transformer import TransformerConfig, Transformer, Layer
 from rgi.rgizero.models.token_transformer import TokenTransformer
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
+from rgi.rgizero.utils import validate_probabilities_or_die
 
 
 class PolicyValueHead(nn.Module):
@@ -54,7 +55,10 @@ class ActionHistoryTransformer(nn.Module):
         policy_target: Optional[torch.Tensor] = None,  # (B, T, num_actions)
         value_target: Optional[torch.Tensor] = None,  # (B, T, num_players)
         padding_mask: Optional[torch.Tensor] = None,  # (B, T)
-    ):
+        encoded_len: Optional[torch.Tensor] = None,  # (B)
+    ) -> tuple[
+        tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor | float | None
+    ]:  # ((policy_logits, value_logits), loss_dict, loss)
         """Forward pass for ActionHistoryTransformer.
 
         Args:
@@ -76,6 +80,8 @@ class ActionHistoryTransformer(nn.Module):
         h = self.transformer(action_emb)  # (B, T, n_embd)
         h = self.ln_f(h)  # (B, T, n_embd)
 
+        loss_dict = {}
+
         if policy_target is not None or value_target is not None:
             policy_logits, value_logits = self.policy_value_head(h)
             flat_padding_mask = padding_mask.view(-1) if padding_mask is not None else None
@@ -89,9 +95,11 @@ class ActionHistoryTransformer(nn.Module):
                 if flat_padding_mask is not None:
                     flat_policy_logits = flat_policy_logits[flat_padding_mask]
                     flat_policy_target = flat_policy_target[flat_padding_mask]
+                validate_probabilities_or_die(flat_policy_target)
                 # Calcualte the average loss per unpadded tokens.
                 # note: We may want to experiment with average per batch?
                 policy_loss = F.cross_entropy(flat_policy_logits, flat_policy_target, reduction="mean")
+                loss_dict["policy_loss"] = policy_loss
                 loss += policy_loss
 
             if value_target is not None:
@@ -101,15 +109,21 @@ class ActionHistoryTransformer(nn.Module):
                 if flat_padding_mask is not None:
                     flat_value_logits = flat_value_logits[flat_padding_mask]
                     flat_value_target = flat_value_target[flat_padding_mask]
+                validate_probabilities_or_die(flat_value_target)
                 value_loss = F.cross_entropy(flat_value_logits, flat_value_target, reduction="mean")
+                loss_dict["value_loss"] = value_loss
                 loss += value_loss
         else:
             # Inference mode: only compute logits for final position
-            h_last = h[:, -1, :]  # (B, n_embd)
+            if encoded_len is not None:
+                batch_idx = torch.arange(B, device=h.device)
+                h_last = h[batch_idx, encoded_len - 1].unsqueeze(1)
+            else:
+                h_last = h[:, [-1], :]
             policy_logits, value_logits = self.policy_value_head(h_last)
             loss = None
 
-        return (policy_logits, value_logits), loss
+        return (policy_logits, value_logits), loss_dict, loss
 
     def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
         return TokenTransformer.configure_optimizers(self, weight_decay, learning_rate, betas, device_type)
@@ -118,11 +132,15 @@ class ActionHistoryTransformer(nn.Module):
 class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     """Neural network evaluator for MCTS."""
 
-    def __init__(self, model: ActionHistoryTransformer, device: str, block_size: int, vocab: Vocab):
+    def __init__(self, model: ActionHistoryTransformer, device: str, block_size: int, vocab: Vocab, verbose=True):
         self.model = model.eval()
         self.device = device
         self.block_size = block_size
         self.vocab = vocab
+        self.verbose = verbose
+        self.total_time = 0.0
+        self.total_evals = 0
+        self.total_batches = 0
 
     @override
     @torch.no_grad()
@@ -142,16 +160,34 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         B = len(states_list)
         L = self.block_size
 
+        t0 = time.time()
+        # encode rows
+        encoded_rows = []
+        encoded_len = []
+        max_encoded_len = 0
+        for state in states_list:
+            encoded = self.vocab.encode(state.action_history)
+            encoded_rows.append(encoded)
+            encoded_len.append(len(encoded))
+        max_encoded_len = max(encoded_len)
+
+        if max_encoded_len > L:
+            raise ValueError(f"max_encoded_len {max_encoded_len} > block_size {L}")
+
         # Start with zeros to simplify padding.
-        x_np = np.zeros((B, L), dtype=np.int32)
-        for i, state in enumerate(states_list):
-            encoded_row = self.vocab.encode(state.action_history)[-self.block_size :]
-            x_np[i, L - len(encoded_row) :] = encoded_row
+        x_np = np.zeros((B, max_encoded_len), dtype=np.int32)
+        for i, encoded_row in enumerate(encoded_rows):
+            x_np[i, : len(encoded_row)] = encoded_row
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
 
         # Process model on GPU.
         x_gpu = x_pinned.to(self.device, non_blocking=True)
-        (policy_logits_gpu, value_logits_gpu), _ = self.model(x_gpu)
+        encoded_len_pinned = self._maybe_pin(torch.tensor(encoded_len))
+        encoded_len_gpu = encoded_len_pinned.to(self.device, non_blocking=True)
+        (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=encoded_len_gpu)
+
+        policy_logits_gpu = policy_logits_gpu.squeeze(1)
+        value_logits_gpu = value_logits_gpu.squeeze(1)
 
         # Calculate legal_policy_mask on CPU
         legal_policy_mask_np = np.zeros(policy_logits_gpu.shape, dtype=np.bool_)
@@ -176,6 +212,14 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_policy_mask_np)):
             legal_policy = policy_np[mask]
             ret[i] = NetworkEvaluatorResult(legal_policy, value_np)
+        t1 = time.time()
+        self.total_time += t1 - t0
+        self.total_evals += len(states_list)
+        self.total_batches += 1
+        if self.verbose and self.total_batches % 1000 == 0:
+            print(
+                f"Evaluation time: {t1 - t0:.3f} seconds, size={len(states_list)}, eval-per-second={len(states_list) / (t1 - t0):.2f}, total-batches={self.total_batches}, mean-eval-per-second={self.total_evals / self.total_time:.2f}, mean-time-per-batch={self.total_time / self.total_batches:.3f}, mean-batch-size={self.total_evals / self.total_batches:.2f}"
+            )
         return ret
 
 
@@ -273,7 +317,6 @@ class AsyncNetworkEvaluator(NetworkEvaluator):
         self,
         base_evaluator: NetworkEvaluator,
         max_batch_size: int = 1024,
-        start=False,
         verbose=False,
     ):
         self.evaluator = base_evaluator
