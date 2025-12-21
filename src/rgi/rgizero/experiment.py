@@ -38,6 +38,7 @@ class ExperimentConfig:
     max_training_epochs: int = 10
     parent_experiment_name: Optional[str] = None
     parent_generation_cap: Optional[int] = None
+    gradient_accumulation_steps: int = 1
     seed: int = 42
 
     def to_json(self):
@@ -172,7 +173,8 @@ class ExperimentRunner:
         torch.save(checkpoint, path)
         print(f"Saved model to {path}")
 
-    async def run(self):
+    async def initialize(self) -> ActionHistoryTransformer:
+        """Initialize Generation 0 (Random) if needed."""
         print(f"Starting Experiment: {self.config.experiment_name}")
         
         # Generation 0: Random Initialization
@@ -192,30 +194,39 @@ class ExperimentRunner:
         else:
             print("Initializing Random Gen 0 model.")
             self.save_model(model, 0, {'description': 'random init'})
+        
+        return model
 
-        current_model = model
+    async def run_generation_step(self, gen_id: int, current_model: ActionHistoryTransformer) -> ActionHistoryTransformer:
+        """Run a single generation step: Self-Play -> Train. Returns updated model."""
+        print(f"\n=== Generation {gen_id} ===")
+        
+        # 1. Self Play
+        dataset_path = self.get_trajectory_path(gen_id)
+        if dataset_path.exists():
+            print(f"Dataset for gen {gen_id} exists at {dataset_path}. Skipping play.")
+        else:
+            print(f"Playing {self.config.num_games_per_gen} games...")
+            await self.play_generation(current_model, gen_id)
+            # Ensure it exists now
+            dataset_path = self.get_trajectory_path(gen_id) 
+        
+        # 2. Training
+        model_path = self.get_model_path(gen_id)
+        if model_path.exists():
+            print(f"Model for gen {gen_id} exists at {model_path}. Loading.")
+            updated_model = self.load_model(gen_id)
+        else:
+            print(f"Training model for gen {gen_id}...")
+            updated_model = self.train_generation(current_model, gen_id)
+            
+        return updated_model
+
+    async def run(self):
+        current_model = await self.initialize()
 
         for gen_id in range(1, self.config.num_generations + 1):
-            print(f"\n=== Generation {gen_id} ===")
-            
-            # 1. Self Play
-            dataset_path = self.get_trajectory_path(gen_id)
-            if dataset_path.exists():
-                print(f"Dataset for gen {gen_id} exists at {dataset_path}. Skipping play.")
-            else:
-                print(f"Playing {self.config.num_games_per_gen} games...")
-                await self.play_generation(current_model, gen_id)
-                # Ensure it exists now
-                dataset_path = self.get_trajectory_path(gen_id) 
-            
-            # 2. Training
-            model_path = self.get_model_path(gen_id)
-            if model_path.exists():
-                print(f"Model for gen {gen_id} exists at {model_path}. Loading.")
-                current_model = self.load_model(gen_id)
-            else:
-                print(f"Training model for gen {gen_id}...")
-                current_model = self.train_generation(current_model, gen_id)
+            current_model = await self.run_generation_step(gen_id, current_model)
                 
     async def play_generation(self, model, gen_id):
         """Run self-play and save trajectory dataset."""
@@ -379,6 +390,7 @@ class ExperimentRunner:
             model_version=f"gen-{gen_id}",
             max_epochs=self.config.max_training_epochs,
             batch_size=self.config.train_batch_size,
+            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
             learning_rate=0.01, # Default?
             eval_interval=500,
             # Simple defaults for now
