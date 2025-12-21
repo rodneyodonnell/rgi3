@@ -303,59 +303,62 @@ def build_trajectory_loader(
 
 from collections import Counter, defaultdict
 
+
 def print_dataset_stats(dataset_path: pathlib.Path, split_name: str, block_size: int, action_vocab: Vocab):
     """Print statistics about a loaded trajectory dataset."""
     td = TrajectoryDataset(dataset_path.parent, split_name, block_size=block_size)
-    
+
     # Calculate basic stats
     num_trajectories = len(td)
     total_actions = td._num_actions
     avg_trajectory_length = total_actions / num_trajectories if num_trajectories > 0 else 0
-    
+
     # Get trajectory lengths, winners, and first moves
     trajectory_lengths = []
     winners = []
     first_moves = []
-    
+
     # To avoid loading everything into memory if huge, we iterate carefully or just assume it fits (mmap helps)
     # Accessing via __getitem__ does padding. Using internal arrays directy might be faster but riskier.
     # Let's use boundaries directly for speed.
-    
+
     action_data = td.action_data
     value_data = td.value_data
     boundaries = td.boundaries
-    
+
     for i in range(num_trajectories):
         start_idx = boundaries[i]
         end_idx = boundaries[i + 1]
         traj_length = end_idx - start_idx
         trajectory_lengths.append(traj_length)
-        
+
         # Get winner from final values (values are the same throughout trajectory)
         # Values are in range [-1, 1] where positive means player 1 advantage
         if start_idx < len(value_data):
-             final_values = value_data[start_idx]  # shape: (num_players,)
-             if final_values[0] > final_values[1]:
-                 winners.append(1)
-             elif final_values[1] > final_values[0]:
-                 winners.append(2)
-             else:
-                 winners.append(None)  # Draw
-        
-             # Get first move (decode from vocab)
-             # action_data contains raw vocab indices
-             first_action_encoded = action_data[start_idx]
-             first_action = action_vocab.decode([first_action_encoded])[0]
-             first_moves.append(first_action)
-    
+            final_values = value_data[start_idx]  # shape: (num_players,)
+            if final_values[0] > final_values[1]:
+                winners.append(1)
+            elif final_values[1] > final_values[0]:
+                winners.append(2)
+            else:
+                winners.append(None)  # Draw
+
+            # Get first move (decode from vocab)
+            # action_data contains raw vocab indices
+            first_action_encoded = action_data[start_idx]
+            first_action = action_vocab.decode([first_action_encoded])[0]
+            first_moves.append(first_action)
+
     # Print basic stats
     print(f"Dataset Stats:")
     print(f"  Trajectories: {num_trajectories}")
     print(f"  Total actions: {total_actions}")
     print(f"  Avg trajectory length: {avg_trajectory_length:.2f}")
     if trajectory_lengths:
-        print(f"  Trajectory length - min: {min(trajectory_lengths)}, max: {max(trajectory_lengths)}, mean: {np.mean(trajectory_lengths):.2f}")
-    
+        print(
+            f"  Trajectory length - min: {min(trajectory_lengths)}, max: {max(trajectory_lengths)}, mean: {np.mean(trajectory_lengths):.2f}"
+        )
+
     # Print winner stats (similar to print_game_stats)
     print(f"Winner Stats:")
     winner_stats = Counter(winners)
@@ -363,17 +366,19 @@ def print_dataset_stats(dataset_path: pathlib.Path, split_name: str, block_size:
     win1_pct = 100 * winner_stats[1] / total_games if total_games > 0 else 0
     win2_pct = 100 * winner_stats[2] / total_games if total_games > 0 else 0
     print(f"  Winner counts: win[1]={win1_pct:.2f}% win[2]={win2_pct:.2f}%, n={total_games}")
-    
+
     # Print stats by initial move
     print(f"Winner Stats by initial move:")
     move_stats = defaultdict(Counter)
     for first_move, winner in zip(first_moves, winners):
         move_stats[first_move][winner] += 1
-    
+
     for action in sorted(move_stats.keys()):
         counts = move_stats[action]
         total = sum(counts.values())
         win1_pct = 100 * counts[1] / total if total > 0 else 0
         win2_pct = 100 * counts[2] / total if total > 0 else 0
         draw_pct = 100 * counts[None] / total if total > 0 else 0
-        print(f"  a={action}: n={total:3} win[1]={win1_pct:.2f}% counts={counts}, win[2]={win2_pct:.2f}% draw={draw_pct:.2f}%")
+        print(
+            f"  a={action}: n={total:3} win[1]={win1_pct:.2f}% counts={counts}, win[2]={win2_pct:.2f}% draw={draw_pct:.2f}%"
+        )
