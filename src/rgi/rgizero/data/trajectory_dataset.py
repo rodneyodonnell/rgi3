@@ -20,9 +20,10 @@ from typing import Any, Sequence
 
 @dataclass
 class TrajectoryTuple:
-    action: torch.Tensor
-    policy: torch.Tensor
-    value: torch.Tensor
+    action: torch.Tensor  # (L, num_actions)
+    policy: torch.Tensor  # (L, num_actions)
+    value: torch.Tensor  # (L, num_players)
+    padding_mask: torch.Tensor | None  # (L,)
 
 
 # Token can be any hashable type? Restrict to `str | int` for now.
@@ -93,7 +94,8 @@ class TrajectoryDatasetBuilder:
         self.fixed_width_policies.append(fixed_width_policies)
         self.values.append(values)
 
-    def save(self, root_dir: str, split: str, shuffle: bool = True):
+    def save(self, root_dir: str, split: str, shuffle: bool = True) -> str:
+        """Save trajectories to disk, returns path to split directory."""
         split_dir = pathlib.Path(root_dir) / split
         split_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,6 +121,8 @@ class TrajectoryDatasetBuilder:
         np.save(split_dir / "policy.npy", np.concatenate(self.fixed_width_policies))
         np.save(split_dir / "value.npy", np.concatenate(self.values))
         np.save(split_dir / "boundaries.npy", boundaries.astype(np.int64))
+
+        return split_dir
 
 
 # TODO: Should this be a `torch.StackDataset` instead?
@@ -189,11 +193,17 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
             value = torch.from_numpy(self.value_data[action_start_idx:action_end_idx])
 
         if apply_padding:
-            pad_len = self.block_size - (action_end_idx - action_start_idx)
+            action_len = action_end_idx - action_start_idx
+            pad_len = self.block_size - action_len
             action = torch.nn.functional.pad(action, (0, pad_len))
             policy = torch.nn.functional.pad(policy, (0, 0, 0, pad_len))
             value = torch.nn.functional.pad(value, (0, 0, 0, pad_len))
-        return TrajectoryTuple(action, policy, value)
+            padding_mask = torch.zeros(self.block_size, dtype=torch.bool)
+            padding_mask[:action_len] = True
+        else:
+            padding_mask = None
+
+        return TrajectoryTuple(action, policy, value, padding_mask)
 
     def _read_vocab(self) -> Vocab:
         with open(self.split_dir / "vocab.json", "r") as f:
@@ -201,28 +211,90 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         return Vocab.from_dict(vocab_dict)
 
 
-def trajectory_collate_fn(batch: list[TrajectoryTuple]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def trajectory_collate_fn(
+    batch: list[TrajectoryTuple],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Custom collate function for TrajectoryTuple objects."""
     actions = torch.stack([item.action for item in batch])
     policies = torch.stack([item.policy for item in batch])
     values = torch.stack([item.value for item in batch])
-    return actions, policies, values
+    padding_masks = torch.stack([item.padding_mask for item in batch])
+    return actions, policies, values, padding_masks
 
 
 def build_trajectory_loader(
     root_dir: str | pathlib.Path,
-    split: str,
+    splits: list[str] | str,
     block_size: int,
     batch_size: int,
-    device_is_cuda: bool,
+    device: str | torch.device | None = None,
     workers: int = 4,
-) -> DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-    ds = TrajectoryDataset(root_dir, split, block_size)
-    return DataLoader(
-        ds,
+    shuffle: bool = True,
+    val_split_prop: float = 0.1,
+) -> tuple[
+    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
+    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
+]:
+    if isinstance(splits, str):  # allow single split to be passed as a string
+        splits = [splits]
+
+    datasets = []
+    for split in splits:
+        split_ds = TrajectoryDataset(root_dir, split, block_size)
+        datasets.append(split_ds)
+    full_dataset = torch.utils.data.ConcatDataset(datasets)
+
+    val_size = int(len(full_dataset) * val_split_prop)
+    train_size = len(full_dataset) - val_size
+    generator = torch.Generator().manual_seed(42)
+    if train_size == 0 or val_size == 0:
+        raise ValueError(
+            f"Not enough data to split into train and validation sets, train_size={train_size}, val_size={val_size}"
+        )
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        full_dataset, [train_size, val_size], generator=generator
+    )
+
+    # Create device-aware collate function if device is specified
+    if device == "mps":
+        device = torch.device(device)
+
+        def collate_fn(batch):
+            actions, policies, values, padding_masks = trajectory_collate_fn(batch)
+            # Copy to MPS, and convert dtype as MPS doesn't support float64.
+            return (
+                actions.to(device),
+                policies.to(device, dtype=torch.float32),
+                values.to(device, dtype=torch.float32),
+                padding_masks.to(device, dtype=torch.bool),
+            )
+
+    else:
+        collate_fn = trajectory_collate_fn
+
+    # Only use pin_memory for CUDA (MPS doesn't support it)
+    use_pin_memory = device is not None and not isinstance(device, str) and device.type == "cuda"
+
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=batch_size,
         num_workers=workers,
-        shuffle=False,
-        pin_memory=device_is_cuda,
-        collate_fn=trajectory_collate_fn,
+        shuffle=shuffle,
+        pin_memory=use_pin_memory,
+        collate_fn=collate_fn,
+        generator=torch.Generator().manual_seed(42),
+        persistent_workers=(workers > 0),
     )  # type: ignore
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        num_workers=workers,
+        shuffle=shuffle,
+        pin_memory=use_pin_memory,
+        collate_fn=collate_fn,
+        generator=torch.Generator().manual_seed(42),
+        persistent_workers=(workers > 0),
+    )  # type: ignore
+
+    return train_loader, val_loader
