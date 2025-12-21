@@ -26,7 +26,7 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Run formatting and static checks
-        run: ./scripts/format-and-run-checks.sh
+        run: ./scripts/format-and-run-checks.sh --check
 
       - name: Run rgizero tests
         run: ./scripts/test_rgizero.sh
