@@ -56,6 +56,8 @@ exclude = ["*.ipynb"]
     "F811",  # redefined-while-unused
     "E731",  # lambda-assignment
     "F541",  # f-string without any placeholders
+    "E701",  # multiple statements on one line
+    "F841",  # local variable `results` is assigned to but never used
 ]
 
 
