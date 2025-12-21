@@ -539,7 +539,7 @@ class IncrementalTreeCache:
         self._tree = tree
         self._trajectory = trajectory
 
-    def _get_tree(self, tree: MCTSNode, start_idx: int, trajectory: list[Any]) -> MCTSNode:
+    def _get_tree(self, tree: MCTSNode, start_idx: int, trajectory: list[Any]) -> MCTSNode | None:
         node = tree
         for i, action in enumerate(trajectory[start_idx:], start=start_idx):
             action_idx = node.action_to_index(action)
@@ -549,7 +549,7 @@ class IncrementalTreeCache:
                 return None
         return node
 
-    def get_tree(self, trajectory: list[Any], update: bool = False) -> MCTSNode:
+    def get_tree(self, trajectory: list[Any], update: bool = False) -> MCTSNode | None:
         """Lookup and optionally update incremental tree. Raises ValueError on trajectory mismatch or subtree not found."""
         if self._tree is None:
             raise ValueError("Incremental tree not set")

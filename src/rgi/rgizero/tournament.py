@@ -2,9 +2,8 @@ import asyncio
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional, Callable
+from typing import Callable, Dict, List, Tuple
 
-import numpy as np
 from tqdm.asyncio import tqdm
 
 from rgi.rgizero.games.base import Game

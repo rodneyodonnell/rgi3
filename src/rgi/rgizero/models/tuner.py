@@ -1,11 +1,20 @@
-from collections import defaultdict
-import time
+import ast
+import dataclasses
+import hashlib
 import json
 import os
-import ast
-import hashlib
-from typing import Any, Callable
+import time
+from collections import defaultdict
 from pprint import pprint
+from typing import Any, Callable
+
+import numpy as np
+import torch
+
+from rgi.rgizero.data.trajectory_dataset import build_trajectory_loader
+from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
+from rgi.rgizero.models.transformer import TransformerConfig
+from rgi.rgizero.train import TrainConfig, Trainer
 
 
 def rewrite_cache_file(path, defaults):
@@ -33,13 +42,6 @@ def clear_failures_from_cache_file(path, max_sane_val=1_000_000):
     json.dump(new_data, open(path, "w"))
 
 
-import dataclasses
-from rgi.rgizero.models.transformer import TransformerConfig
-from rgi.rgizero.train import TrainConfig
-import torch
-from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
-import numpy as np
-
 transform_config_fields = {f.name for f in dataclasses.fields(TransformerConfig)}
 train_config_fields = {f.name for f in dataclasses.fields(TrainConfig)}
 
@@ -57,10 +59,6 @@ def create_random_model(config: TransformerConfig, action_vocab_size, num_player
     model = ActionHistoryTransformer(config=config, action_vocab_size=action_vocab_size, num_players=num_players)
     model.to(device)
     return model
-
-
-from rgi.rgizero.data.trajectory_dataset import build_trajectory_loader
-from rgi.rgizero.train import Trainer
 
 
 def train_model(
@@ -99,7 +97,9 @@ def train_with(vocab_size, num_players, num_genrations, device, n_max_context, d
     train_config_overrides["device"] = device
 
     model_config = TransformerConfig(**model_config_overrides)
-    train_config = TrainConfig(**train_config_overrides)
+    train_config_overrides.setdefault("model_name", "tuner")
+    train_config_overrides.setdefault("model_version", "v0")
+    train_config = TrainConfig(**train_config_overrides)  # type: ignore
 
     print(f"model_config={model_config}")
     print(f"train_config={train_config}")
@@ -224,7 +224,7 @@ class Tuner:
     def _save_result_cache(self):
         json.dump(self.result_cache, open(self.cache_path, "w"))
 
-    def train_and_compute_loss(self, params, reload_model=False, name=None) -> tuple[float, float]:
+    def train_and_compute_loss(self, params, reload_model=False, name=None) -> tuple[float, float, dict, Any]:
         """Look up loss in cache, or train model to compute it and save to cache."""
         param_key = str(sorted((k, v) for (k, v) in params.items() if k in self.all_tune_keys))
         param_key_hash = hashlib.sha256(param_key.encode("utf-8")).hexdigest()
@@ -235,7 +235,7 @@ class Tuner:
         else:
             try:
                 print(f"Training {name or str(params)}")
-                loss_dict, elapsed, model = train_with(**params)
+                loss_dict, elapsed, model = train_with(**params)  # type: ignore
                 loss_dict["elapsed"] = elapsed
                 loss_dict["param_hash"] = param_key_hash
             except Exception as e:
@@ -284,7 +284,7 @@ class Tuner:
         prev_best_loss = self.best_loss
         prev_best_loss_elapsed = self.best_loss_elapsed
         prev_best_params = self.best_params
-        prev_best_loss_dict = self.best_loss_dict
+
         self.best_loss = loss
         self.best_loss_elapsed = elapsed
         self.best_params = params.copy()
@@ -381,7 +381,7 @@ class Tuner:
     def autotune_smart(self, max_generations=20):
         """Intelligently choose which hyperparameters to tune next."""
         if self.best_loss is None:
-            print(f"Using initial model as baseline.")
+            print("Using initial model as baseline.")
             recalculated_params = self._recalculate_tunable_params(self.current_params)
             loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params, name="initial")
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
@@ -413,7 +413,7 @@ class Tuner:
         return False
 
     # TODO: Deprecated. delete.
-    def _autotune(self, num_generations=10) -> bool:
+    def autotune(self, num_generations=10) -> tuple[bool, float, float, dict[str, Any]]:
         """Autotune the model by training and evaluating it with different hyperparameters.
 
         Algorithm:
@@ -425,7 +425,7 @@ class Tuner:
                 - If any improvment was made, update the default parameters and move on to tuning the next hyperparameter.
         """
         if self.best_loss is None:
-            print(f"Training initial model as baseline.")
+            print("Training initial model as baseline.")
             recalculated_params = self._recalculate_tunable_params(self.current_params)
             loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params)
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
@@ -529,8 +529,6 @@ class Tuner:
         return stats_dict
 
     def _compute_stats(self, loss_dicts):
-        import numpy as np
-
         stats_dict = {
             "mean_val_1": np.mean([loss_dict[0]["val"] for loss_dict in loss_dicts]),
             "mean_val_2": np.mean([loss_dict[1]["val"] for loss_dict in loss_dicts]),
@@ -569,7 +567,13 @@ def retune_model(
     initial_params.update(param_overrides)
     tune_options.update(tune_option_overrides)
 
-    tuner = Tuner(tune_options, initial_params, cache_version=cache_version)
+    tuner = Tuner(
+        fixed_params={},
+        initial_params=initial_params,
+        tune_options=tune_options,
+        computed_tune_options={},
+        cache_version=cache_version,
+    )
     tuner.autotune(num_generations=num_generations)
 
     best_model_result = tuner.result_cache["best_model_trajectory"][-1]

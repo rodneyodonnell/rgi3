@@ -39,7 +39,7 @@ def write_random_trajectory_dataset(
         actions_encoded = vocab.encode(actions)
         policies = rng.random((length, 7 + 1), dtype=np.float32)
         values = rng.random((length, 2), dtype=np.float32)
-        builder.add_trajectory(actions_encoded, policies, values)
+        builder.add_trajectory(np.array(actions_encoded, dtype=np.int32), policies, values)
     builder.save(str(root), split, shuffle=shuffle)
     orig_actions = [builder.actions[i] for i in range(len(builder.actions))]
     orig_policies = [builder.fixed_width_policies[i] for i in range(len(builder.fixed_width_policies))]

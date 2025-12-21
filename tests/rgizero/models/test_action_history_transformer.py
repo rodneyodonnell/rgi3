@@ -58,8 +58,8 @@ class TestActionHistoryTransformer:
         value_target_row = torch.rand(seq_len, num_players)
 
         # normalize
-        policy_target_row = policy_target_row / policy_target_row.sum(axis=1).unsqueeze(1)
-        value_target_row = value_target_row / value_target_row.sum(axis=1).unsqueeze(1)
+        policy_target_row = policy_target_row / policy_target_row.sum(dim=1).unsqueeze(1)
+        value_target_row = value_target_row / value_target_row.sum(dim=1).unsqueeze(1)
 
         def get_loss(padding_mask):
             batch_size = padding_mask.shape[0] if padding_mask is not None else 1

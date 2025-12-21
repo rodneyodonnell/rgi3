@@ -17,15 +17,13 @@ from torch.utils.data import Dataset, DataLoader
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from rgi.rgizero.common import TOKENS
-
 
 @dataclass
 class TrajectoryTuple:
     action: torch.Tensor  # (L, num_actions)
     policy: torch.Tensor  # (L, num_actions)
     value: torch.Tensor  # (L, num_players)
-    padding_mask: torch.Tensor  # (L,)
+    padding_mask: torch.Tensor | None  # (L,)
 
 
 # Token can be any hashable type? Restrict to `str | int` for now.
@@ -213,7 +211,9 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         return Vocab.from_dict(vocab_dict)
 
 
-def trajectory_collate_fn(batch: list[TrajectoryTuple]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def trajectory_collate_fn(
+    batch: list[TrajectoryTuple],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Custom collate function for TrajectoryTuple objects."""
     actions = torch.stack([item.action for item in batch])
     policies = torch.stack([item.policy for item in batch])
@@ -273,7 +273,7 @@ def build_trajectory_loader(
         collate_fn = trajectory_collate_fn
 
     # Only use pin_memory for CUDA (MPS doesn't support it)
-    use_pin_memory = device is not None and device.type == "cuda"
+    use_pin_memory = device is not None and not isinstance(device, str) and device.type == "cuda"
 
     train_loader = DataLoader(
         train_dataset,

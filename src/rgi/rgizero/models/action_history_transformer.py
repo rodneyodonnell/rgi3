@@ -35,7 +35,7 @@ def validate_probabilities_or_die(tensor: torch.Tensor, dim: int = 1, tol: float
     if not sums_to_one:
         raise ValueError(f"Probabilities do not sum to 1.0: {tensor}, sums: {row_sums}")
 
-    return in_range and sums_to_one
+    return bool(in_range) and bool(sums_to_one)
 
 
 class PolicyValueHead(nn.Module):
@@ -72,7 +72,7 @@ class ActionHistoryTransformer(nn.Module):
         padding_mask: Optional[torch.Tensor] = None,  # (B, T)
         encoded_len: Optional[torch.Tensor] = None,  # (B)
     ) -> tuple[
-        tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor
+        tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor | float | None
     ]:  # ((policy_logits, value_logits), loss_dict, loss)
         """Forward pass for ActionHistoryTransformer.
 

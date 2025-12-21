@@ -1,12 +1,8 @@
-import asyncio
-import math
-from typing import Sequence
-
-import pytest
 import numpy as np
+import pytest
 
 from rgi.rgizero.games.base import Game
-from rgi.rgizero.players.base import Player, ActionResult, TGameState, TAction
+from rgi.rgizero.players.base import ActionResult, Player
 from rgi.rgizero.tournament import Tournament
 
 
