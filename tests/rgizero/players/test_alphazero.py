@@ -435,15 +435,13 @@ class TestIncrementalTreeCache:
         retrieved = cache.get_tree(extended_trajectory)
         assert retrieved == simple_tree.children[0].children[1]
 
-    def test_get_incremental_mismatch_raises(self, cache, simple_tree):
+    def test_get_incremental_mismatch(self, cache, simple_tree):
         cache.set_incremental_tree(simple_tree, [1])
-        with pytest.raises(ValueError, match="Incremental trajectory mismatch"):
-            cache.get_tree([2])
+        assert cache.get_tree([2]) is None
 
-    def test_get_incremental_not_found_raises(self, cache, simple_tree, game):
+    def test_get_incremental_not_found(self, cache, simple_tree, game):
         cache.set_incremental_tree(simple_tree, [])
-        with pytest.raises(ValueError, match="Action .* not found in tree"):
-            cache.get_tree([game.all_actions()[2]])  # Unexpanded action
+        assert cache.get_tree([game.all_actions()[2]]) is None
 
     def test_update_updates_cache(self, cache, simple_tree, game):
         initial_trajectory = []
