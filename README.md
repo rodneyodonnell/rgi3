@@ -2,7 +2,7 @@
 
 This repository contains (or aims to contain) multiple connected AI tools and experiments.
 
-## rgizero
+# rgizero
 
 **rgizero** is a general-purpose AlphaZero-style game player, with goals of supporting multimodal capabilities.
 
@@ -14,8 +14,6 @@ The goal is to create a reinforcement learning agent that can:
 ## Quick Start
 
 ### Installation
-
-Ensure you have the dependencies installed (using `uv` or similar):
 
 ```bash
 uv sync
@@ -30,3 +28,7 @@ TODO: Add notebook showing this.
 -   Connect4
 -   Count21 (Simple counting game)
 -   Othello (Reversi)
+
+
+# nanoGPT.fork
+**nanoGPT.fork** is a fork & wrapper for nanoGPT to make it easier to call from other tools.
