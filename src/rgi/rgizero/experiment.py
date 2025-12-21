@@ -226,7 +226,6 @@ class ExperimentRunner:
         serial_evaluator = ActionHistoryTransformerEvaluator(
             model, device=self.device, block_size=self.n_max_context, vocab=self.action_vocab
         )
-        # TODO: Configure batch size?
         async_evaluator = AsyncNetworkEvaluator(
             base_evaluator=serial_evaluator, max_batch_size=min(1024, self.config.num_games_per_gen), verbose=False
         )
