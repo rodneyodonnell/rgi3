@@ -94,7 +94,8 @@ class TrajectoryDatasetBuilder:
         self.fixed_width_policies.append(fixed_width_policies)
         self.values.append(values)
 
-    def save(self, root_dir: str, split: str, shuffle: bool = True):
+    def save(self, root_dir: str, split: str, shuffle: bool = True) -> str:
+        """Save trajectories to disk, returns path to split directory."""
         split_dir = pathlib.Path(root_dir) / split
         split_dir.mkdir(parents=True, exist_ok=True)
 

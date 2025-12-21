@@ -33,7 +33,6 @@ def write_random_trajectory_dataset(
     builder = TrajectoryDatasetBuilder(vocab)
     rng = np.random.default_rng(seed)
 
-
     for length in traj_lengths:
         actions = list(rng.integers(1, 8, size=length))  # 1-7
         actions_encoded = vocab.encode(actions)
@@ -61,7 +60,6 @@ def custom_dataset(tmp_path: Path, request: pytest.FixtureRequest) -> Trajectory
     traj_lengths = params.get("traj_lengths", [3, 4, 4])
     return write_random_trajectory_dataset(tmp_path, traj_lengths)
     return write_random_trajectory_dataset(tmp_path, traj_lengths)
-
 
 
 @pytest.mark.parametrize("block_size", [5, 10, 15, 20])
