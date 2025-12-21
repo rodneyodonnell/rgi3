@@ -16,4 +16,8 @@ class RandomPlayer(Player[TGameState, TAction]):
         legal_actions = self.game.legal_actions(game_state)
         action = self.rng.choice(legal_actions)
 
-        return ActionResult(action, {})
+        # Create uniform policy
+        num_legal = len(legal_actions)
+        legal_policy = [1.0 / num_legal] * num_legal
+
+        return ActionResult(action, {"legal_policy": legal_policy, "legal_actions": legal_actions})

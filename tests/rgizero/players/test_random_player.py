@@ -15,6 +15,8 @@ def test_random_player_basic():
     # Check return types
     assert result.action in game.legal_actions(state)
     assert isinstance(result.info, dict)
+    assert "legal_policy" in result.info
+    assert "legal_actions" in result.info
 
 
 def test_random_player_deterministic_with_seed():
