@@ -8,13 +8,18 @@ import asyncio
 import numpy as np
 import pytest
 
-from rgi.rgizero.games.connect4 import Connect4Game
+from rgi.rgizero.games import game_registry
 from rgi.rgizero.players.alphazero import AlphazeroPlayer, MCTSNode
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
 from rgi.rgizero.players.alphazero import ActionResult, MCTSStats
-from rgi.rgizero.games.history_wrapper import HistoryTrackingGame
 from rgi.rgizero.models.action_history_transformer import AsyncNetworkEvaluator
 from rgi.rgizero.players.alphazero import IncrementalTreeCache
+from rgi.rgizero.games.game_registry import HistoryTrackingGame
+
+
+@pytest.fixture
+def game() -> HistoryTrackingGame:
+    return game_registry.create_game("connect4")
 
 
 class UniformEvaluator(NetworkEvaluator):
@@ -116,9 +121,8 @@ class TestMCTSNode:
 class TestAlphazeroPlayer:
     """Test AlphazeroPlayer functionality."""
 
-    def test_agent_initialization(self):
+    def test_agent_initialization(self, game):
         """Test agent initialization."""
-        game = Connect4Game()
         evaluator = UniformEvaluator()
         agent = AlphazeroPlayer(game, evaluator, simulations=100)
 
@@ -128,9 +132,8 @@ class TestAlphazeroPlayer:
         assert agent.c_puct == 1.0
         assert agent.temperature == 1.0
 
-    def test_search_basic(self):
+    def test_search_basic(self, game):
         """Test basic search functionality."""
-        game = Connect4Game()
         evaluator = UniformEvaluator()
         agent = AlphazeroPlayer(game, evaluator, simulations=10)
 
@@ -143,9 +146,8 @@ class TestAlphazeroPlayer:
         assert search_result.stats.simulations == 10
         assert np.sum(search_result.legal_action_visit_counts) == 10  # All simulations should be counted
 
-    def test_temperature_effects(self):
+    def test_temperature_effects(self, game):
         """Test temperature effects on action selection."""
-        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator()
 
         # High temperature should be more uniform
@@ -167,9 +169,8 @@ class TestAlphazeroPlayer:
 
         assert entropy_hot > entropy_cold
 
-    def test_value_propagation(self):
+    def test_value_propagation(self, game):
         """Test that values propagate correctly up the tree."""
-        game = HistoryTrackingGame(Connect4Game())
 
         # Mock evaluator that returns different values for different states
         def mock_values_fn(game_obj, state, legal_actions):
@@ -199,9 +200,8 @@ class TestAlphazeroPlayer:
         # With our biased evaluator, center should get at least some visits
         assert result.action in center_actions or center_ratio > 0.2
 
-    def test_info_dict_contents(self):
+    def test_info_dict_contents(self, game):
         """Test that info dict contains expected information."""
-        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator()
         agent = AlphazeroPlayer(game, evaluator, simulations=15, temperature=0.8)
 
@@ -231,7 +231,7 @@ class TestAlphazeroPlayer:
 class TestGameIntegration:
     """Integration tests with actual games."""
 
-    def test_connect4_full_game(self):
+    def test_connect4_full_game(self, game):
         """Test playing a full Connect4 game."""
         from rgi.rgizero.players.alphazero import play_game
 
@@ -241,7 +241,6 @@ class TestGameIntegration:
                 return np.array([0.1, 0.15, 0.2, 0.3, 0.2, 0.15, 0.1])
             return UniformEvaluator.uniform_policy_fn(game, state, legal_actions)
 
-        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator(policy_fn=policy_fn)
 
         agents = [
@@ -263,12 +262,11 @@ class TestGameIntegration:
         if game.is_terminal(result["final_state"]):
             assert result["winner"] in [None, 1, 2]  # None for draw
 
-    def test_two_player_vs_multiplayer_logic(self):
+    def test_two_player_vs_multiplayer_logic(self, game):
         """Test that the agent behaves differently for 2-player vs multiplayer games."""
         # This is a conceptual test - we'd need a multiplayer game implementation
         # to test this properly. For now, just verify the logic exists.
 
-        game = HistoryTrackingGame(Connect4Game())
         evaluator = UniformEvaluator()
         agent = AlphazeroPlayer(game, evaluator, simulations=5)
 
@@ -281,10 +279,8 @@ class TestGameIntegration:
         result = agent.select_action(state)
         assert result.action in game.legal_actions(state)
 
-    def test_value_perspective_handling(self):
+    def test_value_perspective_handling(self, game):
         """Test that value perspectives are handled correctly."""
-        game = Connect4Game()
-
         evaluator = UniformEvaluator(values_fn=lambda game, state, legal_actions: np.array([0.5, -0.5]))
         # Use 50 simulations to ensure all next-actions are sampled at least once.
         agent = AlphazeroPlayer(game, evaluator, simulations=50)
@@ -301,14 +297,13 @@ class TestGameIntegration:
         assert len(search_result.current_player_mean_values) == 7
         assert np.allclose(search_result.current_player_mean_values, np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]))
 
-    def test_multiplayer_value_arrays(self):
+    def test_multiplayer_value_arrays(self, game):
         """Test that multiplayer value arrays work correctly."""
 
         def mock_multiplayer_values_fn(game, state, legal_actions):
             # Return different values for each player
             return np.array([0.8, 0.2])  # Player 1 gets 0.8, Player 2 gets 0.2
 
-        game = Connect4Game()
         evaluator = UniformEvaluator(values_fn=mock_multiplayer_values_fn)
         agent = AlphazeroPlayer(game, evaluator, simulations=1)  # Single simulation for predictable behavior
 
@@ -337,7 +332,7 @@ class TestGameIntegration:
             "All Q-values should be close to Player 1's value (0.8)"
         )
 
-    def test_recursive_backup_bug(self):
+    def test_recursive_backup_bug(self, game):
         """Test that exposes the recursive backup bug."""
 
         call_count = 0
@@ -348,7 +343,6 @@ class TestGameIntegration:
             # Return very different values for each player to make bugs obvious
             return np.array([0.9, 0.1])  # Player 1: 0.9, Player 2: 0.1
 
-        game = Connect4Game()
         evaluator = UniformEvaluator(values_fn=mock_debug_values_fn)
 
         # Use more simulations to trigger recursive case
@@ -381,11 +375,6 @@ class TestGameIntegration:
         assert search_result.legal_action_visit_counts[most_visited_idx] == 10, (
             "Expected all simulations to hit the same action"
         )
-
-
-@pytest.fixture
-def game():
-    return HistoryTrackingGame(Connect4Game(connect_length=5))
 
 
 @pytest.fixture
