@@ -18,7 +18,7 @@ from rgi.rgizero.train import TrainConfig
 from rgi.rgizero.data.trajectory_dataset import TrajectoryDatasetBuilder, Vocab
 from rgi.rgizero.common import TOKENS
 from rgi.rgizero.players.alphazero import AlphazeroPlayer, play_game_async
-from rgi.rgizero.models.action_history_transformer import (
+from rgi.rgizero.evaluators import (
     ActionHistoryTransformerEvaluator,
     AsyncNetworkEvaluator,
 )

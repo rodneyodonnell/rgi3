@@ -3,7 +3,8 @@ import torch
 import numpy as np
 import random
 
-from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer, ActionHistoryTransformerEvaluator
+from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
+from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator
 from rgi.rgizero.models.transformer import TransformerConfig
 from rgi.rgizero.games.connect4 import Connect4Game
 from rgi.rgizero.games.history_wrapper import HistoryTrackingGame

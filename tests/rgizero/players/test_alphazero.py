@@ -12,7 +12,7 @@ from rgi.rgizero.games import game_registry
 from rgi.rgizero.players.alphazero import AlphazeroPlayer, MCTSNode
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
 from rgi.rgizero.players.alphazero import ActionResult, MCTSStats
-from rgi.rgizero.models.action_history_transformer import AsyncNetworkEvaluator
+from rgi.rgizero.evaluators import AsyncNetworkEvaluator
 from rgi.rgizero.players.alphazero import IncrementalTreeCache
 from rgi.rgizero.games.game_registry import HistoryTrackingGame
 
