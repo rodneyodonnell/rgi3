@@ -37,7 +37,7 @@ def write_random_trajectory_dataset(
         actions = list(rng.integers(1, 8, size=length))  # 1-7
         # actions[0] = TOKENS.START_OF_GAME
         actions_encoded = vocab.encode(actions)
-        policies = rng.random((length, 7+1), dtype=np.float32)
+        policies = rng.random((length, 7 + 1), dtype=np.float32)
         values = rng.random((length, 2), dtype=np.float32)
         builder.add_trajectory(actions_encoded, policies, values)
     builder.save(str(root), split, shuffle=shuffle)

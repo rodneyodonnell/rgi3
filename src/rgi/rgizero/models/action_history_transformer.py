@@ -21,13 +21,14 @@ from rgi.rgizero.models.token_transformer import TokenTransformer
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResult
 
+
 # TODO: Move to util class.
 def validate_probabilities_or_die(tensor: torch.Tensor, dim: int = 1, tol: float = 1e-6) -> bool:
     # 1. Check if all values are >= 0 and <= 1
     in_range = (tensor >= 0).all() and (tensor <= 1).all()
     if not in_range:
         raise ValueError(f"Probabilities are not in range [0, 1]: {tensor}")
-    
+
     # 2. Check if sum is approximately 1.0
     row_sums = tensor.sum(dim=dim)
     sums_to_one = torch.allclose(row_sums, torch.ones_like(row_sums), atol=tol)
@@ -35,6 +36,7 @@ def validate_probabilities_or_die(tensor: torch.Tensor, dim: int = 1, tol: float
         raise ValueError(f"Probabilities do not sum to 1.0: {tensor}, sums: {row_sums}")
 
     return in_range and sums_to_one
+
 
 class PolicyValueHead(nn.Module):
     def __init__(self, n_embd: int, num_actions: int, num_players: int):
@@ -69,7 +71,9 @@ class ActionHistoryTransformer(nn.Module):
         value_target: Optional[torch.Tensor] = None,  # (B, T, num_players)
         padding_mask: Optional[torch.Tensor] = None,  # (B, T)
         encoded_len: Optional[torch.Tensor] = None,  # (B)
-    ) -> tuple[tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor]:  # ((policy_logits, value_logits), loss_dict, loss)
+    ) -> tuple[
+        tuple[torch.Tensor, torch.Tensor], dict[str, torch.Tensor], torch.Tensor
+    ]:  # ((policy_logits, value_logits), loss_dict, loss)
         """Forward pass for ActionHistoryTransformer.
 
         Args:
@@ -110,7 +114,7 @@ class ActionHistoryTransformer(nn.Module):
                 # Calcualte the average loss per unpadded tokens.
                 # note: We may want to experiment with average per batch?
                 policy_loss = F.cross_entropy(flat_policy_logits, flat_policy_target, reduction="mean")
-                loss_dict['policy_loss'] = policy_loss
+                loss_dict["policy_loss"] = policy_loss
                 loss += policy_loss
 
             if value_target is not None:
@@ -122,15 +126,15 @@ class ActionHistoryTransformer(nn.Module):
                     flat_value_target = flat_value_target[flat_padding_mask]
                 validate_probabilities_or_die(flat_value_target)
                 value_loss = F.cross_entropy(flat_value_logits, flat_value_target, reduction="mean")
-                loss_dict['value_loss'] = value_loss
+                loss_dict["value_loss"] = value_loss
                 loss += value_loss
         else:
             # Inference mode: only compute logits for final position
             if encoded_len is not None:
                 batch_idx = torch.arange(B, device=h.device)
-                h_last = h[batch_idx, encoded_len-1].unsqueeze(1)
+                h_last = h[batch_idx, encoded_len - 1].unsqueeze(1)
             else:
-                h_last = h[:,[-1],:]
+                h_last = h[:, [-1], :]
             policy_logits, value_logits = self.policy_value_head(h_last)
             loss = None
 
@@ -184,15 +188,15 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
 
         if max_encoded_len > L:
             raise ValueError(f"max_encoded_len {max_encoded_len} > block_size {L}")
-        
+
         # Start with zeros to simplify padding.
         x_np = np.zeros((B, max_encoded_len), dtype=np.int32)
         for i, encoded_row in enumerate(encoded_rows):
-            x_np[i, :len(encoded_row)] = encoded_row
+            x_np[i, : len(encoded_row)] = encoded_row
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
 
         # Process model on GPU.
-        x_gpu = x_pinned.to(self.device, non_blocking=True)   
+        x_gpu = x_pinned.to(self.device, non_blocking=True)
         encoded_len_pinned = self._maybe_pin(torch.tensor(encoded_len))
         encoded_len_gpu = encoded_len_pinned.to(self.device, non_blocking=True)
         (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=encoded_len_gpu)
@@ -228,7 +232,9 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         self.total_evals += len(states_list)
         self.total_batches += 1
         if self.verbose and self.total_batches % 1000 == 0:
-            print(f"Evaluation time: {t1 - t0:.3f} seconds, size={len(states_list)}, eval-per-second={len(states_list)/(t1 - t0):.2f}, total-batches={self.total_batches}, mean-eval-per-second={self.total_evals/self.total_time:.2f}, mean-time-per-batch={self.total_time/self.total_batches:.3f}, mean-batch-size={self.total_evals/self.total_batches:.2f}")
+            print(
+                f"Evaluation time: {t1 - t0:.3f} seconds, size={len(states_list)}, eval-per-second={len(states_list) / (t1 - t0):.2f}, total-batches={self.total_batches}, mean-eval-per-second={self.total_evals / self.total_time:.2f}, mean-time-per-batch={self.total_time / self.total_batches:.3f}, mean-batch-size={self.total_evals / self.total_batches:.2f}"
+            )
         return ret
 
 

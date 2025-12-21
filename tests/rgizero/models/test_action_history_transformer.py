@@ -58,8 +58,8 @@ class TestActionHistoryTransformer:
         value_target_row = torch.rand(seq_len, num_players)
 
         # normalize
-        policy_target_row = (policy_target_row / policy_target_row.sum(axis=1).unsqueeze(1))
-        value_target_row = (value_target_row / value_target_row.sum(axis=1).unsqueeze(1))
+        policy_target_row = policy_target_row / policy_target_row.sum(axis=1).unsqueeze(1)
+        value_target_row = value_target_row / value_target_row.sum(axis=1).unsqueeze(1)
 
         def get_loss(padding_mask):
             batch_size = padding_mask.shape[0] if padding_mask is not None else 1
@@ -119,14 +119,14 @@ class TestActionHistoryTransformer:
 
         idx = torch.randint(0, vocab_size, (batch_size, seq_len))
 
-        encoded_len_1 = torch.tensor([2,4,2])
+        encoded_len_1 = torch.tensor([2, 4, 2])
         (policy_logits_1, value_logits_1), loss_dict_1, loss_1 = model(idx, encoded_len=encoded_len_1)
 
         assert policy_logits_1.shape == (batch_size, 1, vocab_size)
         assert value_logits_1.shape == (batch_size, 1, num_players)
         assert loss_1 is None
 
-        encoded_len_2 = torch.tensor([3,4,6])
+        encoded_len_2 = torch.tensor([3, 4, 6])
         (policy_logits_2, value_logits_2), _, _ = model(idx, encoded_len=encoded_len_2)
 
         assert torch.all(policy_logits_1[0] != policy_logits_2[0])
@@ -137,7 +137,7 @@ class TestActionHistoryTransformer:
         assert torch.all(value_logits_1[1] == value_logits_2[1])
         assert torch.all(value_logits_1[2] != value_logits_2[2])
 
-        # _last is the last element, so expect logits_2[2] == logits_last[2] 
+        # _last is the last element, so expect logits_2[2] == logits_last[2]
         (policy_logits_last, value_logits_last), _, _ = model(idx)
         assert torch.all(policy_logits_last[2] != policy_logits_1[2])
         assert torch.all(value_logits_last[2] != value_logits_1[2])

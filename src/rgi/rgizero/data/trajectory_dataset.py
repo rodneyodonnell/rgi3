@@ -19,12 +19,13 @@ from typing import Any, Sequence
 
 from rgi.rgizero.common import TOKENS
 
+
 @dataclass
 class TrajectoryTuple:
     action: torch.Tensor  # (L, num_actions)
     policy: torch.Tensor  # (L, num_actions)
     value: torch.Tensor  # (L, num_players)
-    padding_mask: torch.Tensor # (L,)
+    padding_mask: torch.Tensor  # (L,)
 
 
 # Token can be any hashable type? Restrict to `str | int` for now.
@@ -124,6 +125,7 @@ class TrajectoryDatasetBuilder:
 
         return split_dir
 
+
 # TODO: Should this be a `torch.StackDataset` instead?
 class TrajectoryDataset(Dataset[TrajectoryTuple]):
     """Dataset for reading trajectory datasets."""
@@ -178,7 +180,6 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
     def __getitem__(self, trajectory_idx: int) -> TrajectoryTuple:
         return self.read_trajectory(trajectory_idx, apply_padding=True)
 
-
     def read_trajectory(self, trajectory_idx: int, apply_padding: bool) -> TrajectoryTuple:
         action_start_idx = self.boundaries[trajectory_idx]
         action_end_idx = self.boundaries[trajectory_idx + 1]
@@ -230,8 +231,10 @@ def build_trajectory_loader(
     workers: int = 4,
     shuffle: bool = True,
     val_split_prop: float = 0.1,
-) -> tuple[DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]]:
-
+) -> tuple[
+    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+]:
     if isinstance(splits, str):  # allow single split to be passed as a string
         splits = [splits]
 
@@ -245,26 +248,33 @@ def build_trajectory_loader(
     train_size = len(full_dataset) - val_size
     generator = torch.Generator().manual_seed(42)
     if train_size == 0 or val_size == 0:
-        raise ValueError("Not enough data to split into train and validation sets, train_size={train_size}, val_size={val_size}")
-    train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size], generator=generator)
+        raise ValueError(
+            "Not enough data to split into train and validation sets, train_size={train_size}, val_size={val_size}"
+        )
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        full_dataset, [train_size, val_size], generator=generator
+    )
 
     # Create device-aware collate function if device is specified
     if device == "mps":
         device = torch.device(device)
+
         def collate_fn(batch):
             actions, policies, values, padding_masks = trajectory_collate_fn(batch)
             # Copy to MPS, and convert dtype as MPS doesn't support float64.
-            return (actions.to(device),
-                    policies.to(device, dtype=torch.float32),
-                    values.to(device, dtype=torch.float32),
-                    padding_masks.to(device, dtype=torch.bool))
+            return (
+                actions.to(device),
+                policies.to(device, dtype=torch.float32),
+                values.to(device, dtype=torch.float32),
+                padding_masks.to(device, dtype=torch.bool),
+            )
 
     else:
         collate_fn = trajectory_collate_fn
-    
+
     # Only use pin_memory for CUDA (MPS doesn't support it)
     use_pin_memory = device is not None and device.type == "cuda"
-    
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,

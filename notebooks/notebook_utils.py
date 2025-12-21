@@ -38,12 +38,12 @@ def reload_local_modules(name_regex="rgi.*", reload_globals=True, verbose=True):
 
 def detect_device(require_accelerator=True):
     if torch.cuda.is_available():
-        device = 'cuda'
+        device = "cuda"
     elif torch.backends.mps.is_available():
-        device = 'mps'
+        device = "mps"
     else:
-        device = 'cpu'
+        device = "cpu"
     print(f"Detected device: {device}")
-    if require_accelerator and device == 'cpu':
+    if require_accelerator and device == "cpu":
         raise ValueError("No accelerator found")
     return device
