@@ -373,6 +373,9 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             self.tree_cache.set_incremental_tree(root_node, game_state.action_history)
         else:
             root_node = self.tree_cache.get_tree(game_state.action_history, update=True)
+            if root_node is None:
+                root_node = await self._create_root_node_async(game_state)
+                self.tree_cache.set_incremental_tree(root_node, game_state.action_history)
 
         search_result = await self.search_async(game_state, root_node=root_node)
         # Convert visit counts to policy using temperature
@@ -536,27 +539,26 @@ class IncrementalTreeCache:
         self._tree = tree
         self._trajectory = trajectory
 
-    def _get_tree(self, tree: MCTSNode, start_idx: int, trajectory: list[Any]) -> MCTSNode:
+    def _get_tree(self, tree: MCTSNode, start_idx: int, trajectory: list[Any]) -> MCTSNode | None:
         node = tree
         for i, action in enumerate(trajectory[start_idx:], start=start_idx):
             action_idx = node.action_to_index(action)
             node = node.children[action_idx]
             if node is None:
-                raise ValueError(f"Action {action} not found in tree for trajectory {trajectory} at index {i}")
+                return None
         return node
 
-    def get_tree(self, trajectory: list[Any], update: bool = False) -> MCTSNode:
-        """Lookup and optionally update incremental tree. Raises ValueError on trajectory mismatch or subtree not found."""
+    def get_tree(self, trajectory: list[Any], update: bool = False) -> MCTSNode | None:
+        """Lookup and optionally update incremental tree. Returns None on trajectory mismatch or subtree not found."""
         if self._tree is None:
             raise ValueError("Incremental tree not set")
         if trajectory[: len(self._trajectory)] != self._trajectory:
-            raise ValueError(
-                f"Incremental trajectory mismatch, stored trajectory: {self._trajectory}, not prefix of requested trajectory: {trajectory}"
-            )
+            # This can happen if the child has not been explored yet.
+            return None
         if len(trajectory) == len(self._trajectory):
             return self._tree
 
         ret = self._get_tree(self._tree, len(self._trajectory), trajectory)
-        if update:
+        if update and ret is not None:
             self.set_incremental_tree(ret, trajectory)
         return ret
