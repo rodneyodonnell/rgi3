@@ -167,7 +167,7 @@ class ExperimentRunner:
         torch.save(checkpoint, path)
         print(f"Saved model to {path}")
 
-    async def initialize(self) -> ActionHistoryTransformer:
+    def initialize(self) -> ActionHistoryTransformer:
         """Initialize Generation 0 (Random) if needed."""
         print(f"Starting Experiment: {self.config.experiment_name}")
 
@@ -187,7 +187,7 @@ class ExperimentRunner:
 
         return model
 
-    async def run_generation_step(
+    async def run_generation_step_async(
         self, gen_id: int, current_model: ActionHistoryTransformer
     ) -> ActionHistoryTransformer:
         """Run a single generation step: Self-Play -> Train. Returns updated model."""
@@ -199,7 +199,7 @@ class ExperimentRunner:
             print(f"Dataset for gen {gen_id} exists at {dataset_path}. Skipping play.")
         else:
             print(f"Playing {self.config.num_games_per_gen} games...")
-            await self.play_generation(current_model, gen_id)
+            await self.play_generation_async(current_model, gen_id)
             # Ensure it exists now
             dataset_path = self.get_trajectory_path(gen_id)
 
@@ -214,13 +214,13 @@ class ExperimentRunner:
 
         return updated_model
 
-    async def run(self):
-        current_model = await self.initialize()
+    async def run_async(self):
+        current_model = self.initialize()
 
         for gen_id in range(1, self.config.num_generations + 1):
-            current_model = await self.run_generation_step(gen_id, current_model)
+            current_model = await self.run_generation_step_async(gen_id, current_model)
 
-    async def play_generation(self, model, gen_id):
+    async def play_generation_async(self, model, gen_id):
         """Run self-play and save trajectory dataset."""
         # Setup Evaluator
         serial_evaluator = ActionHistoryTransformerEvaluator(
