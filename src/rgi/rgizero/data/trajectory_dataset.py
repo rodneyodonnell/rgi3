@@ -94,7 +94,8 @@ class TrajectoryDatasetBuilder:
         self.fixed_width_policies.append(fixed_width_policies)
         self.values.append(values)
 
-    def save(self, root_dir: str, split: str, shuffle: bool = True):
+    def save(self, root_dir: str, split: str, shuffle: bool = True) -> str:
+        """Save trajectories to disk, returns path to split directory."""
         split_dir = pathlib.Path(root_dir) / split
         split_dir.mkdir(parents=True, exist_ok=True)
 
@@ -232,8 +233,8 @@ def build_trajectory_loader(
     shuffle: bool = True,
     val_split_prop: float = 0.1,
 ) -> tuple[
-    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
-    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
+    DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
     if isinstance(splits, str):  # allow single split to be passed as a string
         splits = [splits]
@@ -249,7 +250,7 @@ def build_trajectory_loader(
     generator = torch.Generator().manual_seed(42)
     if train_size == 0 or val_size == 0:
         raise ValueError(
-            "Not enough data to split into train and validation sets, train_size={train_size}, val_size={val_size}"
+            f"Not enough data to split into train and validation sets, train_size={train_size}, val_size={val_size}"
         )
     train_dataset, val_dataset = torch.utils.data.random_split(
         full_dataset, [train_size, val_size], generator=generator

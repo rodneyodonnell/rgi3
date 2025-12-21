@@ -35,7 +35,6 @@ def write_random_trajectory_dataset(
 
     for length in traj_lengths:
         actions = list(rng.integers(1, 8, size=length))  # 1-7
-        # actions[0] = TOKENS.START_OF_GAME
         actions_encoded = vocab.encode(actions)
         policies = rng.random((length, 7 + 1), dtype=np.float32)
         values = rng.random((length, 2), dtype=np.float32)
@@ -59,6 +58,7 @@ def custom_dataset(tmp_path: Path, request: pytest.FixtureRequest) -> Trajectory
     """Parametrized dataset fixture for custom configurations."""
     params = request.param
     traj_lengths = params.get("traj_lengths", [3, 4, 4])
+    return write_random_trajectory_dataset(tmp_path, traj_lengths)
     return write_random_trajectory_dataset(tmp_path, traj_lengths)
 
 
@@ -112,7 +112,7 @@ def test_get_trajectory_exact_content_unpadded(custom_dataset):
         assert torch.equal(t.value, torch.from_numpy(custom_dataset.orig_values[i]))
 
 
-# TODO: This test is super-slow when workers > 0 (at least on OSX). Long timeout exiting _MultiProcessingDataLoaderIter?
+# Note: This test can be slow when workers > 0 on some platforms (e.g. OSX).
 @pytest.mark.parametrize("batch_size, workers", [(1, 0), (2, 0)])
 @pytest.mark.parametrize("custom_dataset", [{"traj_lengths": [3, 3, 3, 3, 7, 3, 4, 2]}], indirect=True)
 def test_dataloader_batching(custom_dataset, batch_size, workers):

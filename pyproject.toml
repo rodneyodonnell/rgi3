@@ -42,8 +42,23 @@ line-length = 120
 target-version = "py313"
 extend-exclude = [
   "src/rgi/nanogpt/fork/**",
-  "**/notebooks/*.ipynb",
 ]
+extend-include = ["*.ipynb"]
+
+[tool.ruff.format]
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore common notebook issues
+"*.ipynb" = [
+    "E402",  # module-import-not-at-top-of-file
+    "F401",  # unused-import
+    "F811",  # redefined-while-unused
+    "E731",  # lambda-assignment
+    "F541",  # f-string without any placeholders
+]
+
+
 
 [tool.ty.src]
 exclude = [
