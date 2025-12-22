@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import dataclasses
 from dataclasses import dataclass, field
@@ -271,32 +270,9 @@ class ExperimentRunner:
 
         tasks = [secure_semaphore_and_play_game_async() for _ in range(self.config.num_games_per_gen)]
         
-        # Check if we are being debugged (or traced)
-        # If so, avoid tqdm.gather as it can deadlock the debugger
-        is_debugging = False
-        if sys.gettrace() is not None:
-            is_debugging = True
-        else:
-            # sys.gettrace() can be None in VS Code Jupyter debugger
-            # Check if debugpy is loaded and if it thinks we are debugging
-            if "debugpy" in sys.modules:
-                try:
-                    import debugpy
-                    if debugpy.is_client_connected():
-                        is_debugging = True
-                except ImportError:
-                    pass
-        
-        # TODO: Manual override detection logic.
-        is_debugging = False
-
-        if not is_debugging:
-            from tqdm.asyncio import tqdm
-            results = await tqdm.gather(*tasks, desc="Self Play")
-        else:
-            print("Debugger detected: Disabling tqdm progress bar to prevent freeze.")
-            results = await asyncio.gather(*tasks)
-            
+        # Use tqdm for progress
+        from tqdm.asyncio import tqdm
+        results = await tqdm.gather(*tasks, desc="Self Play")
         return results
 
     def _write_dataset(self, results, gen_id):
