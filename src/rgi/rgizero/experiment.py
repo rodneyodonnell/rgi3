@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import dataclasses
 from dataclasses import dataclass, field
@@ -39,7 +40,6 @@ class ExperimentConfig:
     parent_generation_cap: Optional[int] = None
     gradient_accumulation_steps: int = 1
     seed: int = 42
-    use_tqdm: bool = True
 
     def to_json(self):
         return dataclasses.asdict(self)
@@ -270,15 +270,30 @@ class ExperimentRunner:
                 return await play_game_async(self.game, [player, player])
 
         tasks = [secure_semaphore_and_play_game_async() for _ in range(self.config.num_games_per_gen)]
-
-        if self.config.use_tqdm:
+        
+        # Check if we are being debugged (or traced)
+        # If so, avoid tqdm.gather as it can deadlock the debugger
+        is_debugging = False
+        if sys.gettrace() is not None:
+            is_debugging = True
+        else:
+            # sys.gettrace() can be None in VS Code Jupyter debugger
+            # Check if debugpy is loaded and if it thinks we are debugging
+            if "debugpy" in sys.modules:
+                try:
+                    import debugpy
+                    if debugpy.is_client_connected():
+                        is_debugging = True
+                except ImportError:
+                    pass
+        
+        if not is_debugging:
             from tqdm.asyncio import tqdm
-
             results = await tqdm.gather(*tasks, desc="Self Play")
         else:
-            # Note: tqdm.gather breaks the VS Code Jupyter debugger, so we use asyncio.gather
+            print("Debugger detected: Disabling tqdm progress bar to prevent freeze.")
             results = await asyncio.gather(*tasks)
-
+            
         return results
 
     def _write_dataset(self, results, gen_id):
