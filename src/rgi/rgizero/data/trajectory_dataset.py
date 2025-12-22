@@ -305,18 +305,10 @@ from collections import Counter, defaultdict
 
 
 def print_dataset_stats(
-    dataset_path: pathlib.Path, split_name: str, block_size: int, action_vocab: Vocab, model: torch.nn.Module = None
+    dataset_path: pathlib.Path, split_name: str, block_size: int, action_vocab: Vocab, model: torch.nn.Module = None, game=None
 ):
     """Print statistics about a loaded trajectory dataset."""
     td = TrajectoryDataset(dataset_path.parent, split_name, block_size=block_size)
-
-    # Calculate basic stats
-    num_trajectories = len(td)
-    
-    # Get trajectory lengths, winners, and first moves
-    trajectory_lengths = []
-    winners = []
-    first_moves = []
     total_actions = 0
 
     # Model Verification setup
@@ -324,103 +316,62 @@ def print_dataset_stats(
     if model is not None:
         model.eval()
         device = next(model.parameters()).device
-        from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator
-        
-        @dataclass
-        class MockState:
-            action_history: list
-        
+        from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator        
         evaluator = ActionHistoryTransformerEvaluator(model, device, block_size, action_vocab, verbose=False)
-        print("\nModel Verification (First 3 Trajectories):")
+
+    from collections import defaultdict
+    dd_n = defaultdict(int)
+    dd_win0 = defaultdict(int)
+    dd_win1 = defaultdict(int)
+    dd_draw = defaultdict(int)
 
     # Iterate over dataset
-    for i, traj in enumerate(td):
-        # traj is TrajectoryTuple
-        # Calculate length using padding mask if available, or assume full if not?
-        # Dataset __getitem__ applies padding mask. mask is True for valid data.
-        if traj.padding_mask is not None:
-            traj_len = traj.padding_mask.sum().item()
-        else:
-            traj_len = len(traj.action)
-        
-        trajectory_lengths.append(traj_len)
-        total_actions += traj_len
+    for traj in td:
+        actions = traj.action[traj.padding_mask]
+        # policies = traj.policy[traj.padding_mask]
+        values = traj.value[traj.padding_mask]
+        traj_len = actions.size(0)
 
-        # Get winner from values (P1 vs P2)
-        # Value is (L, 2). All steps have same value. Take 0th step.
-        final_values = traj.value[0] # tensor shape (2,)
-        if final_values[0] > final_values[1]:
-            winners.append(1)
-        elif final_values[1] > final_values[0]:
-            winners.append(2)
-        else:
-            winners.append(None) # Draw
+        total_actions += len(actions)
+        final_values = values[-1] # tensor shape (2,)
 
-        # Get first move. index 0 is START_OF_GAME. index 1 is first move.
-        if traj.action.numel() > 1 and traj.padding_mask[1]: # Ensure we have a first move
-             first_action_encoded = traj.action[1].item()
-             first_action = action_vocab.decode([first_action_encoded])[0]
-             first_moves.append(first_action)
-        
-        # Model Verification for first 3
-        if evaluator and i < 3:
-            # Reconstruct initial state info
-            start_of_game_token = action_vocab.decode([traj.action[0].item()])[0]
-            actual_move_token = action_vocab.decode([traj.action[1].item()])[0]
-
-            # Reconstruct initial state
-            state = MockState(action_history=[start_of_game_token])
-            all_actions = action_vocab.itos
-            
-            # Evaluator call
-            results = evaluator.evaluate_batch(None, [state], [all_actions])
-            result = results[0] 
-            
-            val_initial = result.value
-            val_ground_truth = traj.value[0].numpy()
-            
-            policy_probs = result.legal_policy
-            top_k_indices = np.argsort(policy_probs)[-3:][::-1]
-            top_k_tokens = [all_actions[idx] for idx in top_k_indices]
-            top_k_probs = policy_probs[top_k_indices]
-            
-            print(f"  Trajectory {i}:")
-            print(f"    Values (P1, P2): GT={val_ground_truth}, Pred={val_initial}")
-            print(f"    Policy (Start):  Pred Top 3={[f'{t}({p:.2f})' for t, p in zip(top_k_tokens, top_k_probs)]}")
-            print(f"                     Actual Move={actual_move_token}")
-
-    avg_trajectory_length = total_actions / num_trajectories if num_trajectories > 0 else 0
+        for key_len in range(min(3, traj_len)):
+            key = tuple(a.item() for a in actions[:key_len])
+            dd_n[key] += 1
+            if final_values[0] > final_values[1]:
+                dd_win0[key] += 1
+            elif final_values[1] > final_values[0]:
+                dd_win1[key] += 1
+            else:
+                dd_draw[key] += 1
 
     # Print basic stats
     print(f"Dataset Stats:")
-    print(f"  Trajectories: {num_trajectories}")
+    print(f"  Trajectories: {len(td)}")
     print(f"  Total actions: {total_actions}")
-    print(f"  Avg trajectory length: {avg_trajectory_length:.2f}")
-    if trajectory_lengths:
-        print(
-            f"  Trajectory length - min: {min(trajectory_lengths)}, max: {max(trajectory_lengths)}, mean: {np.mean(trajectory_lengths):.2f}"
-        )
+    print(f"  Avg trajectory length: {total_actions/len(td):.2f}")
 
-    # Print winner stats
-    print(f"Winner Stats:")
-    winner_stats = Counter(winners)
-    total_games = num_trajectories
-    win1_pct = 100 * winner_stats[1] / total_games if total_games > 0 else 0
-    win2_pct = 100 * winner_stats[2] / total_games if total_games > 0 else 0
-    print(f"  Winner counts: win[1]={win1_pct:.2f}% win[2]={win2_pct:.2f}%, n={total_games}")
 
-    # Print stats by initial move
-    print(f"Winner Stats by initial move:")
-    move_stats = defaultdict(Counter)
-    for first_move, winner in zip(first_moves, winners):
-        move_stats[first_move][winner] += 1
+    print(f"Prefix Stats:")
+    min_print_key = dd_n[()] * 0.05
+    all_actions = game.all_actions()
+    state0 = game.initial_state()
+    for key in sorted(dd_n.keys()):
+        if len(key) >= 2 and dd_n[key] < min_print_key:
+            # Don't print borking keys.
+            continue
+        win1_pct = 100 * dd_win0[key] / dd_n[key]
+        if evaluator is not None:
+            state = state0
+            for a in key:
+                state = game.next_state(state, a)
+            eval_output = evaluator.evaluate(game, state, all_actions)
+            model_win1_prob = ((eval_output.player_values + 1)/2)[0].item()
+            model_legal_policy = eval_output.legal_policy
+        else:
+            model_win1_prob = None
+            model_legal_policy = None
+        # print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f} model-legal-policy={model_legal_policy}")
+        print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f}")
 
-    for action in sorted(move_stats.keys()):
-        counts = move_stats[action]
-        total = sum(counts.values())
-        win1_pct = 100 * counts[1] / total if total > 0 else 0
-        win2_pct = 100 * counts[2] / total if total > 0 else 0
-        draw_pct = 100 * counts[None] / total if total > 0 else 0
-        print(
-            f"  a={action}: n={total:3} win[1]={win1_pct:.2f}% counts={counts}, win[2]={win2_pct:.2f}% draw={draw_pct:.2f}%"
-        )
+

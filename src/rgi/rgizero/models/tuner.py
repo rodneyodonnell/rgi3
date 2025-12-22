@@ -83,7 +83,7 @@ def train_model(
     return model, trainer
 
 
-def train_with(vocab_size, num_players, num_genrations, device, n_max_context, data_dir, **overrides):
+def train_with(vocab_size, num_players, num_generations, device, n_max_context, data_dir, **overrides):
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
     t0 = time.time()
 
@@ -107,7 +107,7 @@ def train_with(vocab_size, num_players, num_genrations, device, n_max_context, d
         model_config, action_vocab_size=vocab_size, num_players=num_players, seed=42, device=device
     )
 
-    training_splits = [f"gen-{generation_id}" for generation_id in range(1, num_genrations + 1)]
+    training_splits = [f"gen-{generation_id}" for generation_id in range(1, num_generations + 1)]
 
     model, trainer = train_model(
         model, training_splits, train_config, device=device, n_max_context=n_max_context, data_dir=data_dir

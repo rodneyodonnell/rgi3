@@ -109,7 +109,7 @@ class ExperimentRunner:
             return local_path
 
         # Check parent if eligible
-        if self.parent_data_dir and self.config.parent_generation_cap and gen_id <= self.config.parent_generation_cap:
+        if self.parent_data_dir and (self.config.parent_generation_cap is None or gen_id <= self.config.parent_generation_cap):
             parent_path = self.parent_data_dir / filename
             if parent_path.exists():
                 print(f"Using forked data for gen {gen_id} from {parent_path}")
@@ -125,7 +125,7 @@ class ExperimentRunner:
         if local_path.exists():
             return local_path
 
-        if self.parent_models_dir and self.config.parent_generation_cap and gen_id <= self.config.parent_generation_cap:
+        if self.parent_models_dir and (self.config.parent_generation_cap is None or gen_id <= self.config.parent_generation_cap):
             parent_path = self.parent_models_dir / filename
             if parent_path.exists():
                 print(f"Using forked model for gen {gen_id} from {parent_path}")
