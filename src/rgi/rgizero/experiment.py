@@ -379,7 +379,8 @@ class ExperimentRunner:
             max_epochs=self.config.max_training_epochs,
             batch_size=self.config.train_batch_size,
             gradient_accumulation_steps=self.config.gradient_accumulation_steps,
-            learning_rate=0.01,  # Default?
+            learning_rate=6e-4,
+            warmup_iters=100,  # Short warmup for short generations
             eval_interval=500,
             # Simple defaults for now
         )

@@ -99,6 +99,7 @@ def train_with(vocab_size, num_players, num_generations, device, n_max_context, 
     model_config = TransformerConfig(**model_config_overrides)
     train_config_overrides.setdefault("model_name", "tuner")
     train_config_overrides.setdefault("model_version", "v0")
+    train_config_overrides.setdefault("warmup_iters", 100)
     train_config = TrainConfig(**train_config_overrides)  # type: ignore
 
     print(f"model_config={model_config}")
