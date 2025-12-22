@@ -304,50 +304,92 @@ def build_trajectory_loader(
 from collections import Counter, defaultdict
 
 
-def print_dataset_stats(dataset_path: pathlib.Path, split_name: str, block_size: int, action_vocab: Vocab):
+def print_dataset_stats(
+    dataset_path: pathlib.Path, split_name: str, block_size: int, action_vocab: Vocab, model: torch.nn.Module = None
+):
     """Print statistics about a loaded trajectory dataset."""
     td = TrajectoryDataset(dataset_path.parent, split_name, block_size=block_size)
 
     # Calculate basic stats
     num_trajectories = len(td)
-    total_actions = td._num_actions
-    avg_trajectory_length = total_actions / num_trajectories if num_trajectories > 0 else 0
-
+    
     # Get trajectory lengths, winners, and first moves
     trajectory_lengths = []
     winners = []
     first_moves = []
+    total_actions = 0
 
-    # To avoid loading everything into memory if huge, we iterate carefully or just assume it fits (mmap helps)
-    # Accessing via __getitem__ does padding. Using internal arrays directy might be faster but riskier.
-    # Let's use boundaries directly for speed.
+    # Model Verification setup
+    evaluator = None
+    if model is not None:
+        model.eval()
+        device = next(model.parameters()).device
+        from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator
+        
+        @dataclass
+        class MockState:
+            action_history: list
+        
+        evaluator = ActionHistoryTransformerEvaluator(model, device, block_size, action_vocab, verbose=False)
+        print("\nModel Verification (First 3 Trajectories):")
 
-    action_data = td.action_data
-    value_data = td.value_data
-    boundaries = td.boundaries
+    # Iterate over dataset
+    for i, traj in enumerate(td):
+        # traj is TrajectoryTuple
+        # Calculate length using padding mask if available, or assume full if not?
+        # Dataset __getitem__ applies padding mask. mask is True for valid data.
+        if traj.padding_mask is not None:
+            traj_len = traj.padding_mask.sum().item()
+        else:
+            traj_len = len(traj.action)
+        
+        trajectory_lengths.append(traj_len)
+        total_actions += traj_len
 
-    for i in range(num_trajectories):
-        start_idx = boundaries[i]
-        end_idx = boundaries[i + 1]
-        traj_length = end_idx - start_idx
-        trajectory_lengths.append(traj_length)
+        # Get winner from values (P1 vs P2)
+        # Value is (L, 2). All steps have same value. Take 0th step.
+        final_values = traj.value[0] # tensor shape (2,)
+        if final_values[0] > final_values[1]:
+            winners.append(1)
+        elif final_values[1] > final_values[0]:
+            winners.append(2)
+        else:
+            winners.append(None) # Draw
 
-        # Get winner from final values (values are the same throughout trajectory)
-        # Values are in range [-1, 1] where positive means player 1 advantage
-        if start_idx < len(value_data):
-            final_values = value_data[start_idx]  # shape: (num_players,)
-            if final_values[0] > final_values[1]:
-                winners.append(1)
-            elif final_values[1] > final_values[0]:
-                winners.append(2)
-            else:
-                winners.append(None)  # Draw
+        # Get first move. index 0 is START_OF_GAME. index 1 is first move.
+        if traj.action.numel() > 1 and traj.padding_mask[1]: # Ensure we have a first move
+             first_action_encoded = traj.action[1].item()
+             first_action = action_vocab.decode([first_action_encoded])[0]
+             first_moves.append(first_action)
+        
+        # Model Verification for first 3
+        if evaluator and i < 3:
+            # Reconstruct initial state info
+            start_of_game_token = action_vocab.decode([traj.action[0].item()])[0]
+            actual_move_token = action_vocab.decode([traj.action[1].item()])[0]
 
-            # Get first move (decode from vocab)
-            # action_data contains raw vocab indices
-            first_action_encoded = action_data[start_idx]
-            first_action = action_vocab.decode([first_action_encoded])[0]
-            first_moves.append(first_action)
+            # Reconstruct initial state
+            state = MockState(action_history=[start_of_game_token])
+            all_actions = action_vocab.itos
+            
+            # Evaluator call
+            results = evaluator.evaluate_batch(None, [state], [all_actions])
+            result = results[0] 
+            
+            val_initial = result.value
+            val_ground_truth = traj.value[0].numpy()
+            
+            policy_probs = result.legal_policy
+            top_k_indices = np.argsort(policy_probs)[-3:][::-1]
+            top_k_tokens = [all_actions[idx] for idx in top_k_indices]
+            top_k_probs = policy_probs[top_k_indices]
+            
+            print(f"  Trajectory {i}:")
+            print(f"    Values (P1, P2): GT={val_ground_truth}, Pred={val_initial}")
+            print(f"    Policy (Start):  Pred Top 3={[f'{t}({p:.2f})' for t, p in zip(top_k_tokens, top_k_probs)]}")
+            print(f"                     Actual Move={actual_move_token}")
+
+    avg_trajectory_length = total_actions / num_trajectories if num_trajectories > 0 else 0
 
     # Print basic stats
     print(f"Dataset Stats:")
@@ -359,7 +401,7 @@ def print_dataset_stats(dataset_path: pathlib.Path, split_name: str, block_size:
             f"  Trajectory length - min: {min(trajectory_lengths)}, max: {max(trajectory_lengths)}, mean: {np.mean(trajectory_lengths):.2f}"
         )
 
-    # Print winner stats (similar to print_game_stats)
+    # Print winner stats
     print(f"Winner Stats:")
     winner_stats = Counter(winners)
     total_games = num_trajectories

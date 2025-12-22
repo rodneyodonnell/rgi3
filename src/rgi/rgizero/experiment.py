@@ -272,7 +272,9 @@ class ExperimentRunner:
         
         # Use tqdm for progress
         from tqdm.asyncio import tqdm
-        results = await tqdm.gather(*tasks, desc="Self Play")
+        # TODO: tqdm.gather fails while stepping in the debugger? not sure why?
+        results = await asyncio.gather(*tasks)
+        # results = await tqdm.gather(*tasks, desc="Self Play")
         return results
 
     def _write_dataset(self, results, gen_id):
