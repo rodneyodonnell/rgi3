@@ -167,6 +167,7 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         state["policy_data"] = None
         state["value_data"] = None
         state["boundaries"] = None
+        state['split_dir'] = str(state['split_dir']) # Replace PosixPath with string for pickling. 
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -224,37 +225,19 @@ def trajectory_collate_fn(
 
 
 def build_trajectory_loader(
-    root_dir: str | pathlib.Path | None,
-    splits: list[str] | str | list[tuple[pathlib.Path, str]],
+    dataset_paths: list[pathlib.Path],
     block_size: int,
     batch_size: int,
     device: str | torch.device | None = None,
-    workers: int = 4,
+    workers: int = 0,
     shuffle: bool = True,
     val_split_prop: float = 0.1,
 ) -> tuple[
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
-    if isinstance(splits, str):  # allow single split to be passed as a string
-        splits = [splits]
-
-    datasets = []
-    
-    # Check if splits is a list of tuples (path, split_name)
-    if splits and isinstance(splits[0], tuple):
-        for root, split in splits:
-             split_ds = TrajectoryDataset(root, split, block_size)
-             datasets.append(split_ds)
-    elif root_dir is not None:
-        # Legacy list[str] behavior
-        for split in splits:
-            split_ds = TrajectoryDataset(root_dir, split, block_size)
-            datasets.append(split_ds)
-    else:
-         raise ValueError("Must provide root_dir for string splits, or provide list of tuples for splits.")
-
-    full_dataset = torch.utils.data.ConcatDataset(datasets)
+    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size) for path in dataset_paths]
+    full_dataset = torch.utils.data.ConcatDataset(tds)
 
     val_size = int(len(full_dataset) * val_split_prop)
     train_size = len(full_dataset) - val_size
@@ -316,10 +299,11 @@ from collections import Counter, defaultdict
 
 
 def print_dataset_stats(
-    dataset_path: pathlib.Path, split_name: str, block_size: int, action_vocab: Vocab, model: torch.nn.Module = None, game=None
+    dataset_paths: list[pathlib.Path], block_size: int, action_vocab: Vocab, model: torch.nn.Module = None, game=None,
 ):
     """Print statistics about a loaded trajectory dataset."""
-    td = TrajectoryDataset(dataset_path.parent, split_name, block_size=block_size)
+    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size) for path in dataset_paths]
+    td = torch.utils.data.ConcatDataset(tds)
     total_actions = 0
 
     # Model Verification setup
@@ -377,12 +361,12 @@ def print_dataset_stats(
             for a in key:
                 state = game.next_state(state, a)
             eval_output = evaluator.evaluate(game, state, all_actions)
-            model_win1_prob = ((eval_output.player_values + 1)/2)[0].item()
+            model_win1_pct = 100 * ((eval_output.player_values + 1)/2)[0].item()
             model_legal_policy = eval_output.legal_policy
         else:
-            model_win1_prob = None
+            model_win1_pct = None
             model_legal_policy = None
         # print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f} model-legal-policy={model_legal_policy}")
-        print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f}")
+        print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_pct:.2f}")
 
 

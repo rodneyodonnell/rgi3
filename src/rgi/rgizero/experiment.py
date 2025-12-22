@@ -100,6 +100,10 @@ class ExperimentRunner:
         with open(self.exp_dir / "config.json", "w") as f:
             json.dump(self.config.to_json(), f, indent=2)
 
+    def get_trajectory_paths(self, gen_id: int) -> list[Path]:
+        paths = [self.get_trajectory_path(i) for i in range(1, gen_id + 1)]
+        return paths
+
     def get_trajectory_path(self, gen_id: int) -> Path:
         """Get path for trajectory data, handling overlay/forking logic."""
         filename = f"gen-{gen_id}"
@@ -116,15 +120,6 @@ class ExperimentRunner:
                 return parent_path
 
         return local_path  # Default to local (even if not exists, for writing)
-
-    def get_all_training_data_specs(self, max_gen_id: int) -> list[tuple[Path, str]]:
-        """Return a list of (root_dir, split_name) for all generations up to max_gen_id."""
-        specs = []
-        for i in range(1, max_gen_id + 1):
-            path = self.get_trajectory_path(i)
-            # path is .../root/split
-            specs.append((path.parent, path.name))
-        return specs
 
     def get_model_path(self, gen_id: int) -> Path:
         """Get path for model checkpoint, handling overlay/forking logic."""
@@ -339,7 +334,7 @@ class ExperimentRunner:
         """Train model on all data up to gen_id."""
 
         # Get all training data locations (handling forks)
-        training_data_specs = self.get_all_training_data_specs(gen_id)
+        dataset_paths = self.get_trajectory_paths(gen_id)
 
         # Train Config
         train_config = TrainConfig(
@@ -358,8 +353,7 @@ class ExperimentRunner:
         
         # Build loader using the specs
         train_loader, val_loader = build_trajectory_loader(
-            root_dir=None,
-            splits=training_data_specs,
+            dataset_paths=dataset_paths,
             block_size=self.n_max_context,
             batch_size=self.config.train_batch_size,
             device=self.device,
