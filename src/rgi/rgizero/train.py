@@ -24,7 +24,7 @@ class TrainConfig:
 
     # Logging
     eval_interval: int = 2000
-    log_interval: int = 1
+    log_interval: int = 100
     eval_iters: int = 200
     eval_only: bool = False  # if True, script exits right after the first eval
     always_save_checkpoint: bool = True  # if True, always save a checkpoint after each eval
