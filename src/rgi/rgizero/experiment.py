@@ -227,9 +227,7 @@ class ExperimentRunner:
         serial_evaluator = ActionHistoryTransformerEvaluator(
             model, device=self.device, block_size=self.n_max_context, vocab=self.action_vocab
         )
-        async_evaluator = AsyncNetworkEvaluator(
-            base_evaluator=serial_evaluator, max_batch_size=1024, verbose=False
-        )
+        async_evaluator = AsyncNetworkEvaluator(base_evaluator=serial_evaluator, max_batch_size=1024, verbose=False)
 
         # Player Factory
         # We need a closure to act as the factory for play_game_async loop
@@ -272,14 +270,15 @@ class ExperimentRunner:
                 return await play_game_async(self.game, [player, player])
 
         tasks = [secure_semaphore_and_play_game_async() for _ in range(self.config.num_games_per_gen)]
-        
+
         if self.config.use_tqdm:
             from tqdm.asyncio import tqdm
+
             results = await tqdm.gather(*tasks, desc="Self Play")
         else:
             # Note: tqdm.gather breaks the VS Code Jupyter debugger, so we use asyncio.gather
             results = await asyncio.gather(*tasks)
-            
+
         return results
 
     def _write_dataset(self, results, gen_id):
