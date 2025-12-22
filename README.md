@@ -1,6 +1,6 @@
-# rgi3
+# RGI project repo
 
-This repository contains (or aims to contain) multiple connected AI tools and experiments.
+This is an experimental repository for building RL & LLM tools.
 
 # rgizero
 
