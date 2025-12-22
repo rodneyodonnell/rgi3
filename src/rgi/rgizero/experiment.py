@@ -287,6 +287,9 @@ class ExperimentRunner:
                 except ImportError:
                     pass
         
+        # TODO: Manual override detection logic.
+        is_debugging = False
+
         if not is_debugging:
             from tqdm.asyncio import tqdm
             results = await tqdm.gather(*tasks, desc="Self Play")
