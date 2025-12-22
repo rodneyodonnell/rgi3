@@ -14,7 +14,7 @@ from rgi.rgizero.models.transformer import TransformerConfig
 from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
 from rgi.rgizero.models.tuner import create_random_model, train_model
 from rgi.rgizero.train import TrainConfig
-from rgi.rgizero.data.trajectory_dataset import TrajectoryDatasetBuilder, Vocab
+from rgi.rgizero.data.trajectory_dataset import TrajectoryDatasetBuilder, Vocab, build_trajectory_loader
 from rgi.rgizero.common import TOKENS
 from rgi.rgizero.players.alphazero import AlphazeroPlayer, play_game_async
 from rgi.rgizero.evaluators import (
@@ -116,6 +116,15 @@ class ExperimentRunner:
                 return parent_path
 
         return local_path  # Default to local (even if not exists, for writing)
+
+    def get_all_training_data_specs(self, max_gen_id: int) -> list[tuple[Path, str]]:
+        """Return a list of (root_dir, split_name) for all generations up to max_gen_id."""
+        specs = []
+        for i in range(1, max_gen_id + 1):
+            path = self.get_trajectory_path(i)
+            # path is .../root/split
+            specs.append((path.parent, path.name))
+        return specs
 
     def get_model_path(self, gen_id: int) -> Path:
         """Get path for model checkpoint, handling overlay/forking logic."""
@@ -329,50 +338,10 @@ class ExperimentRunner:
     def train_generation(self, model, gen_id) -> ActionHistoryTransformer:
         """Train model on all data up to gen_id."""
 
-        # Collect splits: gen-1 to gen-{gen_id}
-        # Note: We need to resolve these to actual paths for the loader?
-        # The loader `build_trajectory_loader` takes a `root_dir` and a list of `splits`.
-        # It assumes `root_dir / split` exists.
-        # OUR PROBLEM: Our splits might be in `self.data_dir` OR `self.parent_data_dir`.
-        # `build_trajectory_loader` expects one root.
-
-        # WORKAROUND: We can create symlinks or use a modified loader that accepts paths.
-        # OR: We can just support one data dir for now in the loader usage,
-        # which means Forking w/ Overlay requires symlinking the parent data into child dir?
-        # NO, that's messy.
-
-        # Cleanest: Modify `build_trajectory_loader` (or `ExperimentRunner`'s usage of it)
-        # to handle multiple roots.
-        # But `build_trajectory_loader` takes `root_dir`.
-
-        # Simple approach for now:
-        # Since `TrajectoryDataset` takes (root, split), we can instantiate datasets manually
-        # with correct roots and Concat them.
-
-        datasets = []
-        for i in range(1, gen_id + 1):
-            path = self.get_trajectory_path(i)
-            # path is .../data/gen-i
-            # Dataset expects (root, split) -> root/split
-            # So:
-            root = path.parent
-            split = path.name
-
-            from rgi.rgizero.data.trajectory_dataset import TrajectoryDataset
-
-            ds = TrajectoryDataset(root, split, block_size=self.n_max_context)
-            datasets.append(ds)
-
-        full_dataset = torch.utils.data.ConcatDataset(datasets)
-
-        # Now we need to replicate the Train/Val split and Loader creation logic
-        # from `build_trajectory_loader` but starting from `full_dataset`.
-        # I'll inline a simplified version here or reuse logic.
-
-        train_loader, val_loader = self._create_loaders(full_dataset)
+        # Get all training data locations (handling forks)
+        training_data_specs = self.get_all_training_data_specs(gen_id)
 
         # Train Config
-        # TODO: Calculate max_iters based on dataset size?
         train_config = TrainConfig(
             model_name=f"{self.config.experiment_name}",
             model_version=f"gen-{gen_id}",
@@ -382,10 +351,20 @@ class ExperimentRunner:
             learning_rate=6e-4,
             warmup_iters=100,  # Short warmup for short generations
             eval_interval=500,
-            # Simple defaults for now
+            device=self.device,
         )
 
         from rgi.rgizero.train import Trainer
+        
+        # Build loader using the specs
+        train_loader, val_loader = build_trajectory_loader(
+            root_dir=None,
+            splits=training_data_specs,
+            block_size=self.n_max_context,
+            batch_size=self.config.train_batch_size,
+            device=self.device,
+            shuffle=True,
+        )
 
         trainer = Trainer(
             model=model, train_config=train_config, train_loader=train_loader, val_loader=val_loader, device=self.device
@@ -396,41 +375,3 @@ class ExperimentRunner:
         self.save_model(model, gen_id, {"final_loss": trainer.estimate_loss()})
 
         return model
-
-    def _create_loaders(self, dataset):
-        # ... logic similar to build_trajectory_loader ...
-        # For brevity, reusing the core `data_loader` logic requires refactoring it to accept a Dataset.
-        # I will implement a quick split here.
-
-        val_prop = 0.1
-        val_size = int(len(dataset) * val_prop)
-        train_size = len(dataset) - val_size
-        train_ds, val_ds = torch.utils.data.random_split(
-            dataset, [train_size, val_size], generator=torch.Generator().manual_seed(42)
-        )
-
-        # Collate fn
-        from rgi.rgizero.data.trajectory_dataset import trajectory_collate_fn
-
-        # Device aware collate
-        def collate_fn(batch):
-            actions, policies, values, padding_masks = trajectory_collate_fn(batch)
-            if self.device != "cpu":
-                dev = torch.device(self.device)
-                return (
-                    actions.to(dev),
-                    policies.to(dev, dtype=torch.float32),
-                    values.to(dev, dtype=torch.float32),
-                    padding_masks.to(dev, dtype=torch.bool),
-                )
-            return actions, policies, values, padding_masks
-
-        # TODO: num_workers=0 for safety first, then optimization
-        kwargs = {
-            "batch_size": self.config.train_batch_size,
-            "shuffle": True,
-            "collate_fn": collate_fn,
-            "num_workers": 0,  # self.num_workers
-        }
-
-        return (torch.utils.data.DataLoader(train_ds, **kwargs), torch.utils.data.DataLoader(val_ds, **kwargs))

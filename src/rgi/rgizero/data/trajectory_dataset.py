@@ -224,8 +224,8 @@ def trajectory_collate_fn(
 
 
 def build_trajectory_loader(
-    root_dir: str | pathlib.Path,
-    splits: list[str] | str,
+    root_dir: str | pathlib.Path | None,
+    splits: list[str] | str | list[tuple[pathlib.Path, str]],
     block_size: int,
     batch_size: int,
     device: str | torch.device | None = None,
@@ -240,9 +240,20 @@ def build_trajectory_loader(
         splits = [splits]
 
     datasets = []
-    for split in splits:
-        split_ds = TrajectoryDataset(root_dir, split, block_size)
-        datasets.append(split_ds)
+    
+    # Check if splits is a list of tuples (path, split_name)
+    if splits and isinstance(splits[0], tuple):
+        for root, split in splits:
+             split_ds = TrajectoryDataset(root, split, block_size)
+             datasets.append(split_ds)
+    elif root_dir is not None:
+        # Legacy list[str] behavior
+        for split in splits:
+            split_ds = TrajectoryDataset(root_dir, split, block_size)
+            datasets.append(split_ds)
+    else:
+         raise ValueError("Must provide root_dir for string splits, or provide list of tuples for splits.")
+
     full_dataset = torch.utils.data.ConcatDataset(datasets)
 
     val_size = int(len(full_dataset) * val_split_prop)

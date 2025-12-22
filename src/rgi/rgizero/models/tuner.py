@@ -62,7 +62,7 @@ def create_random_model(config: TransformerConfig, action_vocab_size, num_player
 
 
 def train_model(
-    model, training_splits, train_config, device: str, n_max_context: int, data_dir: str, num_workers: int = 0
+    model, training_splits, train_config, device: str, n_max_context: int, data_dir: str | None = None, num_workers: int = 0
 ):
     # Load dataset
     train_loader, val_loader = build_trajectory_loader(
@@ -87,6 +87,8 @@ def train_with(vocab_size, num_players, num_generations, device, n_max_context, 
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
     t0 = time.time()
 
+    training_data = overrides.pop("training_data", None)
+
     for override in overrides:
         if override not in transform_config_fields and override not in train_config_fields:
             raise ValueError(f"Invalid override: {override}")
@@ -108,7 +110,11 @@ def train_with(vocab_size, num_players, num_generations, device, n_max_context, 
         model_config, action_vocab_size=vocab_size, num_players=num_players, seed=42, device=device
     )
 
-    training_splits = [f"gen-{generation_id}" for generation_id in range(1, num_generations + 1)]
+    if training_data is not None:
+        training_splits = training_data # expect list[tuple[Path, str]]
+        data_dir = None
+    else:
+        training_splits = [f"gen-{generation_id}" for generation_id in range(1, num_generations + 1)]
 
     model, trainer = train_model(
         model, training_splits, train_config, device=device, n_max_context=n_max_context, data_dir=data_dir
