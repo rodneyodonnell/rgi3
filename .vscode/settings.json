@@ -34,21 +34,20 @@
     "**/build": true,
     "**/*.egg-info": true
   },
-  
   // Python testing
   "python.testing.pytestArgs": [
     "tests"
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-
   // Enable ruff formatting and linting.
   "[python]": {
-      "editor.defaultFormatter": "charliermarsh.ruff",
-      "editor.formatOnSave": true,
-      "editor.codeActionsOnSave": {
-          "source.fixAll": "explicit"
-      }
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit"
+    }
   },
-  "notebook.formatOnSave.enabled": true // Optional: for Jupyter Notebooks
+  "notebook.formatOnSave.enabled": true, // Optional: for Jupyter Notebooks
+  "jupyter.debug.justMyCode": false
 }

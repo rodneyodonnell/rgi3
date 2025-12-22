@@ -21,7 +21,7 @@ from rgi.rgizero.evaluators import (
     ActionHistoryTransformerEvaluator,
     AsyncNetworkEvaluator,
 )
-from tqdm.asyncio import tqdm
+
 import asyncio
 
 
@@ -39,6 +39,7 @@ class ExperimentConfig:
     parent_generation_cap: Optional[int] = None
     gradient_accumulation_steps: int = 1
     seed: int = 42
+    use_tqdm: bool = True
 
     def to_json(self):
         return dataclasses.asdict(self)
@@ -227,7 +228,7 @@ class ExperimentRunner:
             model, device=self.device, block_size=self.n_max_context, vocab=self.action_vocab
         )
         async_evaluator = AsyncNetworkEvaluator(
-            base_evaluator=serial_evaluator, max_batch_size=min(1024, self.config.num_games_per_gen), verbose=False
+            base_evaluator=serial_evaluator, max_batch_size=1024, verbose=False
         )
 
         # Player Factory
@@ -248,7 +249,7 @@ class ExperimentRunner:
         # Run Games
         await async_evaluator.start()
         try:
-            results = await self._play_games_concurrently(player_factory)
+            results = await self._play_games_async(player_factory)
         finally:
             await async_evaluator.stop()
 
@@ -256,7 +257,7 @@ class ExperimentRunner:
         print(f"Writing {len(results)} trajectories...")
         self._write_dataset(results, gen_id)
 
-    async def _play_games_concurrently(self, player_factory):
+    async def _play_games_async(self, player_factory):
         """Helper to run games in parallel."""
         # Using a semaphore to limit concurrency if needed, though AsyncEvaluator handles batching
         # Actually, we rely on the AsyncNetworkEvaluator's max_batch_size to cap practical throughput,
@@ -264,15 +265,21 @@ class ExperimentRunner:
 
         limit = asyncio.Semaphore(1000)  # Max concurrent games
 
-        async def run_one():
+        async def secure_semaphore_and_play_game_async():
             async with limit:
                 player = player_factory()
                 # Self-play: same player instance (or identical clones) for both sides usually fine for AlphaZero
                 return await play_game_async(self.game, [player, player])
 
-        tasks = [run_one() for _ in range(self.config.num_games_per_gen)]
-        # Use tqdm for progress
-        results = await tqdm.gather(*tasks, desc="Self Play")
+        tasks = [secure_semaphore_and_play_game_async() for _ in range(self.config.num_games_per_gen)]
+        
+        if self.config.use_tqdm:
+            from tqdm.asyncio import tqdm
+            results = await tqdm.gather(*tasks, desc="Self Play")
+        else:
+            # Note: tqdm.gather breaks the VS Code Jupyter debugger, so we use asyncio.gather
+            results = await asyncio.gather(*tasks)
+            
         return results
 
     def _write_dataset(self, results, gen_id):
