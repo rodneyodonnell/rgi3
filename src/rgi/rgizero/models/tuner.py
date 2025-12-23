@@ -378,7 +378,7 @@ class Tuner:
             loss, elapsed, loss_dict, model = self.train_and_compute_loss(recalculated_params, name="initial")
             self.maybe_update_best_param(loss, elapsed, recalculated_params, loss_dict)
             print(
-                f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s, val_policy={self.best_loss_dict.get('val_policy', -1):.4f}, val_value={self.best_loss_dict.get('val_value', -1):.4f}"
+                f"## Initial Model, loss={self.best_loss} elapsed={self.best_loss_elapsed}s, val_policy={self.best_loss_dict.get('val_policy_loss', -1):.4f}, val_value={self.best_loss_dict.get('val_value_loss', -1):.4f}"
             )
 
         generation = 0
