@@ -49,7 +49,7 @@ class ExperimentConfig:
 
 
 class ExperimentRunner:
-    def __init__(self, config: ExperimentConfig, base_dir: Path):
+    def __init__(self, config: ExperimentConfig, base_dir: Path, training_args: Optional[dict] = None):
         self.config = config
         self.base_dir = base_dir
         self.exp_dir = base_dir / config.experiment_name
@@ -89,12 +89,22 @@ class ExperimentRunner:
 
         self.n_max_context = n_max_context
 
-        configs = {
-            "tiny": TransformerConfig(n_max_context=n_max_context, n_layer=2, n_head=2, n_embd=8),
-            "small": TransformerConfig(n_max_context=n_max_context, n_layer=4, n_head=4, n_embd=32),
-            "large": TransformerConfig(n_max_context=n_max_context, n_layer=8, n_head=8, n_embd=128),
-        }
-        self.model_config = configs.get(config.model_size, configs["small"])
+        # configs = {
+        #     "tiny": TransformerConfig(n_max_context=n_max_context, n_layer=2, n_head=2, n_embd=8),
+        #     "small": TransformerConfig(n_max_context=n_max_context, n_layer=4, n_head=4, n_embd=32),
+        #     "large": TransformerConfig(n_max_context=n_max_context, n_layer=8, n_head=8, n_embd=128),
+        # }
+        # self.model_config = configs.get(config.model_size, configs["small"])
+        model_config_keys = {f.name for f in dataclasses.fields(TransformerConfig)}
+        model_config_dict = {k: v for k, v in training_args.items() if k in model_config_keys}
+        self.model_config = TransformerConfig(**model_config_dict)
+
+        train_config_keys = {f.name for f in dataclasses.fields(TrainConfig)}
+        self.train_config_dict = {k: v for k, v in training_args.items() if k in train_config_keys}
+
+        unused_keys = {k: v for k, v in training_args.items() if k not in model_config_keys and k not in self.train_config_dict}
+        if unused_keys:
+            raise ValueError(f"Unused training args: {unused_keys}")
 
     def _save_config(self):
         with open(self.exp_dir / "config.json", "w") as f:
@@ -340,13 +350,8 @@ class ExperimentRunner:
         train_config = TrainConfig(
             model_name=f"{self.config.experiment_name}",
             model_version=f"gen-{gen_id}",
-            max_epochs=self.config.max_training_epochs,
-            batch_size=self.config.train_batch_size,
-            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
-            learning_rate=6e-4,
-            warmup_iters=100,  # Short warmup for short generations
-            eval_interval=500,
             device=self.device,
+            **self.train_config_dict,
         )
 
         from rgi.rgizero.train import Trainer
