@@ -61,13 +61,10 @@ def create_random_model(config: TransformerConfig, action_vocab_size, num_player
     return model
 
 
-def train_model(
-    model, training_splits, train_config, device: str, n_max_context: int, data_dir: str | None = None, num_workers: int = 0
-):
+def train_model(model, dataset_paths, train_config, device: str, n_max_context: int, num_workers: int = 0):
     # Load dataset
     train_loader, val_loader = build_trajectory_loader(
-        data_dir,
-        training_splits,
+        dataset_paths,
         block_size=n_max_context,
         batch_size=train_config.batch_size,
         device=device,
@@ -83,11 +80,9 @@ def train_model(
     return model, trainer
 
 
-def train_with(vocab_size, num_players, num_generations, device, n_max_context, data_dir, **overrides):
+def train_with(vocab_size, num_players, device, n_max_context, dataset_paths, **overrides):
     """Wrapper fn to train a model using the latest train.py code and the given overrides."""
     t0 = time.time()
-
-    training_data = overrides.pop("training_data", None)
 
     for override in overrides:
         if override not in transform_config_fields and override not in train_config_fields:
@@ -110,23 +105,13 @@ def train_with(vocab_size, num_players, num_generations, device, n_max_context, 
         model_config, action_vocab_size=vocab_size, num_players=num_players, seed=42, device=device
     )
 
-    if training_data is not None:
-        training_splits = training_data # expect list[tuple[Path, str]]
-        data_dir = None
-    else:
-        training_splits = [f"gen-{generation_id}" for generation_id in range(1, num_generations + 1)]
-
-    model, trainer = train_model(
-        model, training_splits, train_config, device=device, n_max_context=n_max_context, data_dir=data_dir
-    )
+    model, trainer = train_model(model, dataset_paths, train_config, device=device, n_max_context=n_max_context)
     loss_dict = trainer.estimate_loss()
     loss_dict = {k: float(v) for k, v in loss_dict.items()}
 
-    # def train_model(model, training_splits, train_config):
-    # loss_dict = train.train_and_evaluate(**overrides)
     elapsed = time.time() - t0
     print(
-        f"## train_loss: {loss_dict['train']:.4f}, val_loss: {loss_dict['val']:.4f}, Time taken: {elapsed}s, val_policy_loss: {loss_dict['val_policy']:.4f}, val_value_loss: {loss_dict['val_value']:.4f}, overrides={overrides}"
+        f"## train_loss: {loss_dict['train']:.4f}, val_loss: {loss_dict['val']:.4f}, Time taken: {elapsed}s, val_policy_loss: {loss_dict['val_policy_loss']:.4f}, val_value_loss: {loss_dict['val_value_loss']:.4f}, overrides={overrides}"
     )
     return loss_dict, elapsed, model
 
