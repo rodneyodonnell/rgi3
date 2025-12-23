@@ -331,17 +331,18 @@ class Tuner:
         for key, val in self.result_cache.items():
             parsed_key = ast.literal_eval(key)
             score = self.calc_score(val["val"], val["elapsed"])
-            score_stats_raw["ALL"].append(score)
+            score_stats_raw[("ALL", "ALL")].append(score)
             for param_key, param_val in parsed_key:
                 score_stats_raw[(param_key, param_val)].append(score)
 
         score_stats = {k: sum(v) / len(v) for k, v in score_stats_raw.items()}
 
         def calc_expected_score(params):
-            default_score = score_stats["ALL"]
-            return sum(
+            default_score = score_stats[("ALL", "ALL")]
+            score = sum(
                 score_stats.get((param_key, param_val), default_score) for param_key, param_val in params.items()
-            ) / len(params)
+            ) / len(params)            
+            return score
 
         def is_allowed_change(candidate_values, best_value, candidate_value) -> bool:
             """Return truen if candidate_value is next to best_value in tunable_values"""
@@ -363,6 +364,9 @@ class Tuner:
                 candidate_params[param_name] = candidate_value
                 candidate_params = self._recalculate_tunable_params(candidate_params)
                 expected_score = calc_expected_score(candidate_params)
+                # Hack to increase precendence of tuning learning_rate.
+                if param_name == 'learning_rate':
+                    expected_score -= 1000.0
                 name = f"{param_name}: {self.best_params[param_name]} -> {candidate_value}"
                 candidate_list.append((expected_score, name, candidate_params))
 
