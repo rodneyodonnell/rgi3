@@ -182,12 +182,11 @@ class Tuner:
                 key=lambda kv: kv[1]["val"] + kv[1]["elapsed"] * self.target_improvement_per_second,
             )
             best_cache_params = dict(ast.literal_eval(best_cache_entry[0]))
-            initial_params = best_cache_params
-            new_initial_params_keys = initial_params.keys()
-            if initial_params_keys != new_initial_params_keys:
-                raise ValueError(
-                    f"initial_params_keys != new_initial_params_keys after loadding best params. Added: {new_initial_params_keys - initial_params_keys}. Removed: {initial_params_keys - new_initial_params_keys}"
-                )
+            for k, v in initial_params.items():
+                if k not in best_cache_params:
+                    print(f"Adding extra param {k}={v}")
+                    best_cache_params[k] = v
+            initial_params = self._recalculate_tunable_params(best_cache_params)
 
         self.current_params = initial_params.copy()
         self.current_params.update(self.fixed_params)
@@ -307,7 +306,7 @@ class Tuner:
         params = params.copy()
         for k, fn in self.computed_tune_options.items():
             current_val = params[k]
-            possible_vals = fn(params)
+            possible_vals = fn(params | self.fixed_params)
             # self.tune_options[k] = possible_vals
             # TODO: Find the closest option?
             if current_val in possible_vals:
