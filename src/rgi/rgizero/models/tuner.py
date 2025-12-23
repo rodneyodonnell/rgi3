@@ -44,6 +44,7 @@ def clear_failures_from_cache_file(path, max_sane_val=1_000_000):
 
 transform_config_fields = {f.name for f in dataclasses.fields(TransformerConfig)}
 train_config_fields = {f.name for f in dataclasses.fields(TrainConfig)}
+other_config_fields = {"last_file"}
 
 print(f"transform_config_fields: {transform_config_fields}")
 print(f"train_config_fields: {train_config_fields}")
@@ -85,7 +86,7 @@ def train_with(vocab_size, num_players, device, n_max_context, dataset_paths, **
     t0 = time.time()
 
     for override in overrides:
-        if override not in transform_config_fields and override not in train_config_fields:
+        if override not in transform_config_fields and override not in train_config_fields and override not in other_config_fields:
             raise ValueError(f"Invalid override: {override}")
 
     model_config_overrides = {k: v for k, v in overrides.items() if k in transform_config_fields}
