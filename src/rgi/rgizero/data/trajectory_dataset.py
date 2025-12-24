@@ -135,12 +135,14 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
     value_data: np.ndarray
     boundaries: np.ndarray
 
-    def __init__(self, root_dir: str | pathlib.Path, split: str, block_size: int) -> None:
+    def __init__(self, root_dir: str | pathlib.Path, split: str, block_size: int, prepend_start_token: bool) -> None:
         self.split_dir = pathlib.Path(root_dir) / split
         self.block_size = block_size
 
         self.vocab = self._read_vocab()
-        self.start_prefix_idx = torch.tensor([self.vocab.stoi[TOKENS.START_OF_GAME]])
+        self.prepend_start_token = prepend_start_token
+        if self.prepend_start_token:
+            self.start_prefix_idx = torch.tensor([self.vocab.stoi[TOKENS.START_OF_GAME]])
 
         # file paths for safe reopening in worker processes
         self._action_path = self.split_dir / "action.npy"
@@ -180,16 +182,16 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         return self._num_trajectories
 
     def __getitem__(self, trajectory_idx: int) -> TrajectoryTuple:
-        return self.read_trajectory(trajectory_idx, apply_padding=True, prepend_start_token=True)
+        return self.read_trajectory(trajectory_idx, apply_padding=True)
 
-    def read_trajectory(self, trajectory_idx: int, apply_padding: bool, prepend_start_token: bool) -> TrajectoryTuple:
+    def read_trajectory(self, trajectory_idx: int, apply_padding: bool) -> TrajectoryTuple:
         action_start_idx = self.boundaries[trajectory_idx]
         action_end_idx = self.boundaries[trajectory_idx + 1]
 
         # Suppress warning about non-writable arrays since we only read from tensors
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
-            if prepend_start_token:
+            if self.prepend_start_token:
                 action = torch.cat([self.start_prefix_idx, torch.from_numpy(self.action_data[action_start_idx:action_end_idx-1])])
             else:
                 action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
@@ -240,7 +242,7 @@ def build_trajectory_loader(
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
-    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size) for path in dataset_paths]
+    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=True) for path in dataset_paths]
     full_dataset = torch.utils.data.ConcatDataset(tds)
 
     val_size = int(len(full_dataset) * val_split_prop)
@@ -306,7 +308,7 @@ def print_dataset_stats(
     dataset_paths: list[pathlib.Path], block_size: int, action_vocab: Vocab, model: torch.nn.Module = None, game=None,
 ):
     """Print statistics about a loaded trajectory dataset."""
-    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size) for path in dataset_paths]
+    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=False) for path in dataset_paths]
     td = torch.utils.data.ConcatDataset(tds)
     total_actions = 0
 
