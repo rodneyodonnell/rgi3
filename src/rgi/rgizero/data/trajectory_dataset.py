@@ -17,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from rgi.rgizero.common import TOKENS
 
 @dataclass
 class TrajectoryTuple:
@@ -139,6 +140,7 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         self.block_size = block_size
 
         self.vocab = self._read_vocab()
+        self.start_prefix_idx = torch.tensor([self.vocab.stoi[TOKENS.START_OF_GAME]])
 
         # file paths for safe reopening in worker processes
         self._action_path = self.split_dir / "action.npy"
@@ -178,17 +180,19 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         return self._num_trajectories
 
     def __getitem__(self, trajectory_idx: int) -> TrajectoryTuple:
-        return self.read_trajectory(trajectory_idx, apply_padding=True)
+        return self.read_trajectory(trajectory_idx, apply_padding=True, prepend_start_token=True)
 
-    def read_trajectory(self, trajectory_idx: int, apply_padding: bool) -> TrajectoryTuple:
+    def read_trajectory(self, trajectory_idx: int, apply_padding: bool, prepend_start_token: bool) -> TrajectoryTuple:
         action_start_idx = self.boundaries[trajectory_idx]
         action_end_idx = self.boundaries[trajectory_idx + 1]
 
         # Suppress warning about non-writable arrays since we only read from tensors
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
-            action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
-            # action = torch.from_numpy(self.vocab.encode([TOKENS.START_OF_GAME] + self.action_data[action_start_idx:action_end_idx].tolist()))
+            if prepend_start_token:
+                action = torch.cat([self.start_prefix_idx, torch.from_numpy(self.action_data[action_start_idx:action_end_idx-1])])
+            else:
+                action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
             policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
             # TODO: value_data repeatedly stores the same value... we should just store it once per trajectory.
             # For now, store per-step values to match tests and pad/truncate like actions/policies.
