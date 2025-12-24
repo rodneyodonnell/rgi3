@@ -32,12 +32,12 @@ class ExperimentConfig:
     num_generations: int
     num_games_per_gen: int
     num_simulations: int
-    model_size: str  # "tiny", "small", etc.
-    train_batch_size: int = 2048
-    max_training_epochs: int = 10
+    # model_size: str  # "tiny", "small", etc.
+    # train_batch_size: int = 2048
+    # max_training_epochs: int = 10
     parent_experiment_name: Optional[str] = None
     parent_generation_cap: Optional[int] = None
-    gradient_accumulation_steps: int = 1
+    # gradient_accumulation_steps: int = 1
     seed: int = 42
 
     def to_json(self):
@@ -49,12 +49,13 @@ class ExperimentConfig:
 
 
 class ExperimentRunner:
-    def __init__(self, config: ExperimentConfig, base_dir: Path, training_args: Optional[dict] = None):
+    def __init__(self, config: ExperimentConfig, base_dir: Path, training_args: Optional[dict] = None, progress_bar=True):
         self.config = config
         self.base_dir = base_dir
         self.exp_dir = base_dir / config.experiment_name
         self.data_dir = self.exp_dir / "data"
         self.models_dir = self.exp_dir / "models"
+        self.progress_bar = progress_bar
 
         # Parent directories for forking
         self.parent_data_dir: Optional[Path] = None
@@ -284,11 +285,12 @@ class ExperimentRunner:
 
         tasks = [secure_semaphore_and_play_game_async() for _ in range(self.config.num_games_per_gen)]
         
-        # Use tqdm for progress
-        from tqdm.asyncio import tqdm
-        # TODO: tqdm.gather fails while stepping in the debugger? not sure why?
-        results = await asyncio.gather(*tasks)
-        # results = await tqdm.gather(*tasks, desc="Self Play")
+        if self.progress_bar:
+            from tqdm.asyncio import tqdm
+            # TODO: tqdm.gather fails while stepping in the debugger? not sure why?
+            results = await tqdm.gather(*tasks, desc="Self Play")
+        else:
+            results = await asyncio.gather(*tasks)
         return results
 
     def _write_dataset(self, results, gen_id):
@@ -360,7 +362,7 @@ class ExperimentRunner:
         train_loader, val_loader = build_trajectory_loader(
             dataset_paths=dataset_paths,
             block_size=self.n_max_context,
-            batch_size=self.config.train_batch_size,
+            batch_size=train_config.batch_size,
             device=self.device,
             shuffle=True,
         )
