@@ -399,6 +399,10 @@ class Tuner:
 
         return improved, self.best_loss, self.best_loss_elapsed, self.best_params
 
+    def get_model_for_params(self, params):
+        loss, elapsed, loss_dict, model = self.train_and_compute_loss(params, reload_model=True)
+        return model
+
     def _find_improvement(self, candidate_params_list):
         for name, params in candidate_params_list:
             loss, elapsed, loss_dict, model = self.train_and_compute_loss(params, name=name)
