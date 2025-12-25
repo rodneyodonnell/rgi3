@@ -4,7 +4,6 @@ import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Any
-import shutil
 
 import torch
 import numpy as np
@@ -39,6 +38,7 @@ class ExperimentConfig:
     parent_generation_cap: Optional[int] = None
     # gradient_accumulation_steps: int = 1
     seed: int = 42
+    training_window_size: Optional[int] = 10
 
     def to_json(self):
         return dataclasses.asdict(self)
@@ -112,7 +112,11 @@ class ExperimentRunner:
             json.dump(self.config.to_json(), f, indent=2)
 
     def get_trajectory_paths(self, gen_id: int) -> list[Path]:
-        paths = [self.get_trajectory_path(i) for i in range(1, gen_id + 1)]
+        start_gen = 1
+        if self.config.training_window_size is not None:
+             start_gen = max(1, gen_id - self.config.training_window_size + 1)
+        
+        paths = [self.get_trajectory_path(i) for i in range(start_gen, gen_id + 1)]
         return paths
 
     def get_trajectory_path(self, gen_id: int) -> Path:
