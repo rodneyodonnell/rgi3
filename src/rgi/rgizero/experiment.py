@@ -239,7 +239,7 @@ class ExperimentRunner:
         for gen_id in range(1, self.config.num_generations + 1):
             current_model = await self.run_generation_step_async(gen_id, current_model)
 
-    async def play_generation_async(self, model, gen_id):
+    async def play_generation_async(self, model, gen_id, write_dataset=True):
         """Run self-play and save trajectory dataset."""
         # Setup Evaluator
         serial_evaluator = ActionHistoryTransformerEvaluator(
@@ -270,8 +270,9 @@ class ExperimentRunner:
             await async_evaluator.stop()
 
         # Write Dataset
-        print(f"Writing {len(results)} trajectories...")
-        self._write_dataset(results, gen_id)
+        if write_dataset:
+            print(f"Writing {len(results)} trajectories...")
+            self._write_dataset(results, gen_id)
 
     async def _play_games_async(self, player_factory):
         """Helper to run games in parallel."""
