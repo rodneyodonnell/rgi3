@@ -239,6 +239,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         noise_alpha: float = 0.3,
         noise_epsilon: float = 0.25,
         rng: np.random.Generator | None = None,
+        print_thinking = False
     ):
         """Initialize MCTS agent.
 
@@ -263,6 +264,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         self.noise_epsilon = noise_epsilon
         self.tree_cache = IncrementalTreeCache()
         self.rng = rng or np.random.default_rng()
+        self.print_thinking = print_thinking
 
     async def _create_root_node_async(self, root_state: TGameState) -> MCTSNode:
         # Get legal actions and evaluate root state
@@ -399,6 +401,8 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             action_idx = int(np.argmax(search_result.legal_action_visit_counts))
             legal_policy = np.zeros_like(search_result.legal_action_visit_counts, dtype=np.float32)
             legal_policy[action_idx] = 1.0
+            if self.print_thinking:
+                print(f"Selected action {action_idx} from visit_counts {search_result.legal_action_visit_counts} expected reward {search_result.current_player_mean_values[action_idx]}")
         else:
             # Stochastic selection with temperature
             epsilon = 1e-10
