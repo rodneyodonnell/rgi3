@@ -58,7 +58,7 @@ class TrainConfig:
     # dtype: str = "float16"
     dtype: str = "bfloat16"
     compile: bool = False
-    patience: int = 5  # Early stopping patience
+    early_stop_patience: int = 5  # Early stopping patience
 
 
 class Trainer:
@@ -184,7 +184,7 @@ class Trainer:
                     torch.save(checkpoint, os.path.join(self.model_dir, "best.pt"))
                 else:
                     self.no_improve_count += 1
-                    if self.no_improve_count >= self.train_config.patience:
+                    if self.no_improve_count >= self.train_config.early_stop_patience:
                         print(f"Early stopping triggered! Valid loss hasn't improved for {self.no_improve_count} evals.")
                         self.early_stop = True
                         break
