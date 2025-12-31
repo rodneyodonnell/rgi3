@@ -88,11 +88,11 @@ class Connect4Game(Game[GameState, Action]):
 
         # Draw
         if game_state.winner is None:
-            return 0.0
+            return 0.5
 
         if game_state.winner == player_id:
             return 1.0
-        return -1.0
+        return 0.0
 
     @override
     def pretty_str(self, game_state: GameState) -> str:

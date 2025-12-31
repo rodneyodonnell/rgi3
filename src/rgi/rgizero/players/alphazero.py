@@ -200,6 +200,19 @@ class MCTSNode:
         )
 
 
+# TODO: Move to util class.
+def validate_array_probabilities_or_die(array: np.ndarray, dim: int = 1, tol: float = 1e-6) -> bool:
+    # 1. Check if all values are >= 0 and <= 1
+    in_range = (array >= 0).all() and (array <= 1).all()
+    if not in_range:
+        raise ValueError(f"Probabilities are not in range [0, 1]: {array}")
+
+    # 2. Check if sum is approximately 1.0
+    if not np.isclose(array.sum(), 1.0, atol=tol):
+        raise ValueError(f"Probabilities do not sum to 1.0: {array}")
+
+    return True
+
 @dataclass
 class SearchResult:
     """Result of a search."""
@@ -321,7 +334,9 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
 
         # Terminal state - return actual game values
         if self.game.is_terminal(state):
-            return self.game.reward_array(state)
+            reward_array = self.game.reward_array(state)
+            validate_array_probabilities_or_die(reward_array)
+            return (reward_array.shape[0] * reward_array - 1) / reward_array.shape[0]
 
         if not node.legal_actions:
             raise ValueError("No legal actions in non-terminal state")
