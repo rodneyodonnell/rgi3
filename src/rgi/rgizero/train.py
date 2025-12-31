@@ -185,7 +185,7 @@ class Trainer:
                 else:
                     self.no_improve_count += 1
                     if self.no_improve_count >= self.train_config.early_stop_patience:
-                        print(f"Early stopping triggered! Valid loss hasn't improved for {self.no_improve_count} evals.")
+                        print(f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals.")
                         self.early_stop = True
                         break
 
