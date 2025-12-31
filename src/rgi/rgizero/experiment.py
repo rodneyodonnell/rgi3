@@ -65,6 +65,9 @@ class ExperimentRunner:
             self.parent_data_dir = parent_exp_dir / "data"
             self.parent_models_dir = parent_exp_dir / "models"
 
+        if training_args is None:
+            training_args = {}
+
         # Setup directories
         os.makedirs(self.data_dir, exist_ok=True)
         os.makedirs(self.models_dir, exist_ok=True)
