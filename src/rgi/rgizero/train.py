@@ -163,7 +163,7 @@ class Trainer:
                 param_group["lr"] = lr
 
             # evaluate the loss on train/val sets and write checkpoints
-            if self.iter_num % self.train_config.eval_interval == 0:
+            if (self.iter_num % self.train_config.eval_interval == 0) or (self.iter_num +1 == max_iters):
                 losses = self.estimate_loss()
                 loss_str = ", ".join(f"{k}:{v:.4f}" for k, v in losses.items())
                 print(f"step {self.iter_num}: losses: {loss_str}")
