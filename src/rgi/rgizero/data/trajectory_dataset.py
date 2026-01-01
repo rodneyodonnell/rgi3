@@ -12,10 +12,13 @@ import numpy as np
 import json
 import torch
 import warnings
+from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Sequence, Optional
+
+from rgi.rgizero.common import TOKENS
 
 from rgi.rgizero.common import TOKENS
 
@@ -171,7 +174,7 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         state["policy_data"] = None
         state["value_data"] = None
         state["boundaries"] = None
-        state['split_dir'] = str(state['split_dir']) # Replace PosixPath with string for pickling. 
+        state["split_dir"] = str(state["split_dir"])  # Replace PosixPath with string for pickling.
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -192,7 +195,9 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
             if self.prepend_start_token:
-                action = torch.cat([self.start_prefix_idx, torch.from_numpy(self.action_data[action_start_idx:action_end_idx-1])])
+                action = torch.cat(
+                    [self.start_prefix_idx, torch.from_numpy(self.action_data[action_start_idx : action_end_idx - 1])]
+                )
             else:
                 action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
             policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
@@ -242,7 +247,10 @@ def build_trajectory_loader(
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
-    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=True) for path in dataset_paths]
+    tds = [
+        TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=True)
+        for path in dataset_paths
+    ]
     full_dataset = torch.utils.data.ConcatDataset(tds)
 
     val_size = int(len(full_dataset) * val_split_prop)
@@ -301,14 +309,18 @@ def build_trajectory_loader(
     return train_loader, val_loader
 
 
-from collections import Counter, defaultdict
-
-
 def print_dataset_stats(
-    dataset_paths: list[pathlib.Path], block_size: int, action_vocab: Vocab, model: torch.nn.Module = None, game=None,
+    dataset_paths: list[pathlib.Path],
+    block_size: int,
+    action_vocab: Vocab,
+    model: Optional[torch.nn.Module] = None,
+    game=None,
 ):
     """Print statistics about a loaded trajectory dataset."""
-    tds = [TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=False) for path in dataset_paths]
+    tds = [
+        TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=False)
+        for path in dataset_paths
+    ]
     td = torch.utils.data.ConcatDataset(tds)
     total_actions = 0
 
@@ -316,11 +328,6 @@ def print_dataset_stats(
     evaluator = None
     if model is not None:
         model.eval()
-        device = next(model.parameters()).device
-        from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator        
-        evaluator = ActionHistoryTransformerEvaluator(model, device, block_size, action_vocab, verbose=False)
-
-    from collections import defaultdict
     dd_n = defaultdict(int)
     dd_win0 = defaultdict(int)
     dd_win1 = defaultdict(int)
@@ -347,32 +354,30 @@ def print_dataset_stats(
                 dd_draw[key] += 1
 
     # Print basic stats
-    print(f"Dataset Stats:")
+    print("Dataset Stats:")
     print(f"  Trajectories: {len(td)}")
     print(f"  Total actions: {total_actions}")
-    print(f"  Avg trajectory length: {total_actions/len(td):.2f}")
+    print(f"  Avg trajectory length: {total_actions / len(td):.2f}")
 
-
-    print(f"Prefix Stats:")
-    min_print_key = dd_n[()] * 0.05
-    all_actions = game.all_actions()
-    state0 = game.initial_state()
-    for key in sorted(dd_n.keys()):
-        if len(key) >= 2 and dd_n[key] < min_print_key:
-            # Don't print borking keys.
-            continue
-        win1_pct = 100 * dd_win0[key] / dd_n[key]
-        if evaluator is not None:
-            state = state0
-            for a in key:
-                state = game.next_state(state, a)
-            eval_output = evaluator.evaluate(game, state, all_actions)
-            model_win1_pct = 100 * ((eval_output.player_values + 1)/2)[0].item()
-            model_legal_policy = eval_output.legal_policy
-        else:
-            model_win1_pct = None
-            model_legal_policy = None
-        # print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f} model-legal-policy={model_legal_policy}")
-        print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_pct:.2f}")
-
-
+    print("Prefix Stats:")
+    if game is not None:
+        min_print_key = dd_n[()] * 0.05
+        all_actions = game.all_actions()
+        state0 = game.initial_state()
+        for key in sorted(dd_n.keys()):
+            if len(key) >= 2 and dd_n[key] < min_print_key:
+                # Don't print borking keys.
+                continue
+            win1_pct = 100 * dd_win0[key] / dd_n[key]
+            if evaluator is not None:
+                state = state0
+                for a in key:
+                    state = game.next_state(state, a)
+                eval_output = evaluator.evaluate(game, state, all_actions)
+                model_win1_pct = 100 * ((eval_output.player_values + 1) / 2)[0].item()
+            else:
+                model_win1_pct = None
+            # print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f} model-legal-policy={model_legal_policy}")
+            print(
+                f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_pct:.2f}"
+            )
