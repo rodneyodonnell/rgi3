@@ -26,19 +26,51 @@ class TrajectoryDatasetFixture:
 def write_random_trajectory_dataset(
     tmp_path: Path, traj_lengths: list[int], seed: int | None = None, shuffle: bool = False
 ) -> TrajectoryDatasetFixture:
+    from rgi.rgizero.games import game_registry
+
     seed = seed if seed is not None else np.random.randint(0, 1000000)
     root = tmp_path / "test_data"
     split = "train"
-    vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(range(1, 8)))
+    
+    # Create the game to get valid actions and state
+    game = game_registry.create_game("connect4")
+    # TODO: Can we not include start_token in vocab??
+    vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(game.all_actions()))
     builder = TrajectoryDatasetBuilder(vocab)
     rng = np.random.default_rng(seed)
 
     for length in traj_lengths:
-        actions = list(rng.integers(1, 8, size=length))  # 1-7
-        actions_encoded = vocab.encode(actions)
-        policies = rng.random((length, 7 + 1), dtype=np.float32)
-        values = rng.random((length, 2), dtype=np.float32)
+        state = game.initial_state()
+        
+        # Lists to store trajectory data
+        actions_list = []
+        policies_list = []
+        values_list = []
+        
+        for _ in range(length):
+            legal_actions = game.legal_actions(state)
+            action = rng.choice(legal_actions)
+            
+            # TODO: Can we not include start_token in vocab??
+            policy = rng.random(len(vocab.itos))
+            policy = policy / policy.sum()
+            
+            # TODO: Do these sum to 0 or 1??
+            value = rng.random(2)
+            
+            state = game.next_state(state, action)
+            
+            actions_list.append(action)
+            policies_list.append(policy)
+            values_list.append(value)
+
+        actions_encoded = vocab.encode(actions_list)
+        
+        policies = np.stack(policies_list, axis=0).astype(np.float32)
+        values = np.stack(values_list, axis=0).astype(np.float32)
+        
         builder.add_trajectory(np.array(actions_encoded, dtype=np.int32), policies, values)
+        
     builder.save(str(root), split, shuffle=shuffle)
     orig_actions = [builder.actions[i] for i in range(len(builder.actions))]
     orig_policies = [builder.fixed_width_policies[i] for i in range(len(builder.fixed_width_policies))]
