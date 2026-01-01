@@ -20,7 +20,6 @@ from typing import Any, Sequence, Optional
 
 from rgi.rgizero.common import TOKENS
 
-from rgi.rgizero.common import TOKENS
 
 @dataclass
 class TrajectoryTuple:
@@ -327,7 +326,12 @@ def print_dataset_stats(
     # Model Verification setup
     evaluator = None
     if model is not None:
+        from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator  # hack to avoid circular import
+
         model.eval()
+        device = next(model.parameters()).device
+        evaluator = ActionHistoryTransformerEvaluator(model, device, block_size, action_vocab, verbose=False)
+
     dd_n = defaultdict(int)
     dd_win0 = defaultdict(int)
     dd_win1 = defaultdict(int)
@@ -341,7 +345,7 @@ def print_dataset_stats(
         traj_len = actions.size(0)
 
         total_actions += len(actions)
-        final_values = values[-1] # tensor shape (2,)
+        final_values = values[-1]  # tensor shape (2,)
 
         for key_len in range(min(3, traj_len)):
             key = tuple(a.item() for a in actions[:key_len])
@@ -376,8 +380,7 @@ def print_dataset_stats(
                 eval_output = evaluator.evaluate(game, state, all_actions)
                 model_win1_pct = 100 * ((eval_output.player_values + 1) / 2)[0].item()
             else:
-                model_win1_pct = None
-            # print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f} model-legal-policy={model_legal_policy}")
+                model_win1_pct = -1
             print(
                 f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_pct:.2f}"
             )

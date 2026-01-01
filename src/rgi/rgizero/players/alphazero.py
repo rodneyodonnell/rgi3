@@ -213,6 +213,7 @@ def validate_array_probabilities_or_die(array: np.ndarray, dim: int = 1, tol: fl
 
     return True
 
+
 @dataclass
 class SearchResult:
     """Result of a search."""
@@ -239,7 +240,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         noise_alpha: float = 0.3,
         noise_epsilon: float = 0.25,
         rng: np.random.Generator | None = None,
-        print_thinking = False
+        print_thinking=False,
     ):
         """Initialize MCTS agent.
 
@@ -402,7 +403,9 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
             legal_policy = np.zeros_like(search_result.legal_action_visit_counts, dtype=np.float32)
             legal_policy[action_idx] = 1.0
             if self.print_thinking:
-                print(f"Selected action {action_idx} from visit_counts {search_result.legal_action_visit_counts} expected reward {search_result.current_player_mean_values[action_idx]}")
+                print(
+                    f"Selected action {action_idx} from visit_counts {search_result.legal_action_visit_counts} expected reward {search_result.current_player_mean_values[action_idx]}"
+                )
         else:
             # Stochastic selection with temperature
             epsilon = 1e-10

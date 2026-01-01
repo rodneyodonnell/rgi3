@@ -86,7 +86,11 @@ def train_with(vocab_size, num_players, device, n_max_context, dataset_paths, **
     t0 = time.time()
 
     for override in overrides:
-        if override not in transform_config_fields and override not in train_config_fields and override not in other_config_fields:
+        if (
+            override not in transform_config_fields
+            and override not in train_config_fields
+            and override not in other_config_fields
+        ):
             raise ValueError(f"Invalid override: {override}")
 
     model_config_overrides = {k: v for k, v in overrides.items() if k in transform_config_fields}
@@ -341,7 +345,7 @@ class Tuner:
             default_score = score_stats[("ALL", "ALL")]
             score = sum(
                 score_stats.get((param_key, param_val), default_score) for param_key, param_val in params.items()
-            ) / len(params)            
+            ) / len(params)
             return score
 
         def is_allowed_change(candidate_values, best_value, candidate_value) -> bool:
@@ -365,7 +369,7 @@ class Tuner:
                 candidate_params = self._recalculate_tunable_params(candidate_params)
                 expected_score = calc_expected_score(candidate_params)
                 # Hack to increase precendence of tuning learning_rate.
-                if param_name == 'learning_rate':
+                if param_name == "learning_rate":
                     expected_score -= 1000.0
                 name = f"{param_name}: {self.best_params[param_name]} -> {candidate_value}"
                 candidate_list.append((expected_score, name, candidate_params))

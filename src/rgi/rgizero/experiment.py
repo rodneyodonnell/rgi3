@@ -49,7 +49,9 @@ class ExperimentConfig:
 
 
 class ExperimentRunner:
-    def __init__(self, config: ExperimentConfig, base_dir: Path, training_args: Optional[dict] = None, progress_bar=True):
+    def __init__(
+        self, config: ExperimentConfig, base_dir: Path, training_args: Optional[dict] = None, progress_bar=True
+    ):
         self.config = config
         self.base_dir = base_dir
         self.exp_dir = base_dir / config.experiment_name
@@ -106,7 +108,9 @@ class ExperimentRunner:
         train_config_keys = {f.name for f in dataclasses.fields(TrainConfig)}
         self.train_config_dict = {k: v for k, v in training_args.items() if k in train_config_keys}
 
-        unused_keys = {k: v for k, v in training_args.items() if k not in model_config_keys and k not in self.train_config_dict}
+        unused_keys = {
+            k: v for k, v in training_args.items() if k not in model_config_keys and k not in self.train_config_dict
+        }
         if unused_keys:
             raise ValueError(f"Unused training args: {unused_keys}")
 
@@ -117,8 +121,8 @@ class ExperimentRunner:
     def get_trajectory_paths(self, gen_id: int) -> list[Path]:
         start_gen = 1
         if self.config.training_window_size is not None:
-             start_gen = max(1, gen_id - self.config.training_window_size + 1)
-        
+            start_gen = max(1, gen_id - self.config.training_window_size + 1)
+
         paths = [self.get_trajectory_path(i) for i in range(start_gen, gen_id + 1)]
         return paths
 
@@ -131,7 +135,9 @@ class ExperimentRunner:
             return local_path
 
         # Check parent if eligible
-        if self.parent_data_dir and (self.config.parent_generation_cap is None or gen_id <= self.config.parent_generation_cap):
+        if self.parent_data_dir and (
+            self.config.parent_generation_cap is None or gen_id <= self.config.parent_generation_cap
+        ):
             parent_path = self.parent_data_dir / filename
             if parent_path.exists():
                 print(f"Using forked data for gen {gen_id} from {parent_path}")
@@ -147,7 +153,9 @@ class ExperimentRunner:
         if local_path.exists():
             return local_path
 
-        if self.parent_models_dir and (self.config.parent_generation_cap is None or gen_id <= self.config.parent_generation_cap):
+        if self.parent_models_dir and (
+            self.config.parent_generation_cap is None or gen_id <= self.config.parent_generation_cap
+        ):
             parent_path = self.parent_models_dir / filename
             if parent_path.exists():
                 print(f"Using forked model for gen {gen_id} from {parent_path}")
@@ -292,9 +300,10 @@ class ExperimentRunner:
                 return await play_game_async(self.game, [player, player])
 
         tasks = [secure_semaphore_and_play_game_async() for _ in range(self.config.num_games_per_gen)]
-        
+
         if self.progress_bar:
             from tqdm.asyncio import tqdm
+
             # TODO: tqdm.gather fails while stepping in the debugger? not sure why?
             results = await tqdm.gather(*tasks, desc="Self Play")
         else:
@@ -365,7 +374,7 @@ class ExperimentRunner:
         )
 
         from rgi.rgizero.train import Trainer
-        
+
         # Build loader using the specs
         train_loader, val_loader = build_trajectory_loader(
             dataset_paths=dataset_paths,

@@ -140,7 +140,7 @@ class Trainer:
             # termination conditions
             if self.iter_num > self.train_config.max_iters or self.early_stop:
                 break
-        
+
         # Reload best model if we saved one
         best_path = os.path.join(self.model_dir, "best.pt")
         if os.path.exists(best_path):
@@ -163,7 +163,7 @@ class Trainer:
                 param_group["lr"] = lr
 
             # evaluate the loss on train/val sets and write checkpoints
-            if (self.iter_num % self.train_config.eval_interval == 0) or (self.iter_num +1 == max_iters):
+            if (self.iter_num % self.train_config.eval_interval == 0) or (self.iter_num + 1 == max_iters):
                 losses = self.estimate_loss()
                 loss_str = ", ".join(f"{k}:{v:.4f}" for k, v in losses.items())
                 print(f"step {self.iter_num}: losses: {loss_str}")
@@ -172,7 +172,7 @@ class Trainer:
                 if losses["val"] < self.best_val_loss:
                     self.best_val_loss = losses["val"]
                     self.no_improve_count = 0
-                    
+
                     checkpoint = {
                         "model": self.model.state_dict(),
                         "optimizer": self.optimizer.state_dict(),
@@ -185,7 +185,9 @@ class Trainer:
                 else:
                     self.no_improve_count += 1
                     if self.no_improve_count >= self.train_config.early_stop_patience:
-                        print(f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals.")
+                        print(
+                            f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals."
+                        )
                         self.early_stop = True
                         break
 
