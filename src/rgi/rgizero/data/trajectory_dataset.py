@@ -12,10 +12,13 @@ import numpy as np
 import json
 import torch
 import warnings
+from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Sequence, Optional
+
+from rgi.rgizero.common import TOKENS
 
 
 @dataclass
@@ -134,11 +137,14 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
     value_data: np.ndarray
     boundaries: np.ndarray
 
-    def __init__(self, root_dir: str | pathlib.Path, split: str, block_size: int) -> None:
+    def __init__(self, root_dir: str | pathlib.Path, split: str, block_size: int, prepend_start_token: bool) -> None:
         self.split_dir = pathlib.Path(root_dir) / split
         self.block_size = block_size
 
         self.vocab = self._read_vocab()
+        self.prepend_start_token = prepend_start_token
+        if self.prepend_start_token:
+            self.start_prefix_idx = torch.tensor([self.vocab.stoi[TOKENS.START_OF_GAME]])
 
         # file paths for safe reopening in worker processes
         self._action_path = self.split_dir / "action.npy"
@@ -167,6 +173,7 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         state["policy_data"] = None
         state["value_data"] = None
         state["boundaries"] = None
+        state["split_dir"] = str(state["split_dir"])  # Replace PosixPath with string for pickling.
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -186,7 +193,12 @@ class TrajectoryDataset(Dataset[TrajectoryTuple]):
         # Suppress warning about non-writable arrays since we only read from tensors
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="The given NumPy array is not writable.*")
-            action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
+            if self.prepend_start_token:
+                action = torch.cat(
+                    [self.start_prefix_idx, torch.from_numpy(self.action_data[action_start_idx : action_end_idx - 1])]
+                )
+            else:
+                action = torch.from_numpy(self.action_data[action_start_idx:action_end_idx])
             policy = torch.from_numpy(self.policy_data[action_start_idx:action_end_idx])
             # TODO: value_data repeatedly stores the same value... we should just store it once per trajectory.
             # For now, store per-step values to match tests and pad/truncate like actions/policies.
@@ -223,26 +235,22 @@ def trajectory_collate_fn(
 
 
 def build_trajectory_loader(
-    root_dir: str | pathlib.Path,
-    splits: list[str] | str,
+    dataset_paths: list[pathlib.Path],
     block_size: int,
     batch_size: int,
     device: str | torch.device | None = None,
-    workers: int = 4,
+    workers: int = 0,
     shuffle: bool = True,
     val_split_prop: float = 0.1,
 ) -> tuple[
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
-    if isinstance(splits, str):  # allow single split to be passed as a string
-        splits = [splits]
-
-    datasets = []
-    for split in splits:
-        split_ds = TrajectoryDataset(root_dir, split, block_size)
-        datasets.append(split_ds)
-    full_dataset = torch.utils.data.ConcatDataset(datasets)
+    tds = [
+        TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=True)
+        for path in dataset_paths
+    ]
+    full_dataset = torch.utils.data.ConcatDataset(tds)
 
     val_size = int(len(full_dataset) * val_split_prop)
     train_size = len(full_dataset) - val_size
@@ -298,3 +306,81 @@ def build_trajectory_loader(
     )  # type: ignore
 
     return train_loader, val_loader
+
+
+def print_dataset_stats(
+    dataset_paths: list[pathlib.Path],
+    block_size: int,
+    action_vocab: Vocab,
+    model: Optional[torch.nn.Module] = None,
+    game=None,
+):
+    """Print statistics about a loaded trajectory dataset."""
+    tds = [
+        TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=False)
+        for path in dataset_paths
+    ]
+    td = torch.utils.data.ConcatDataset(tds)
+    total_actions = 0
+
+    # Model Verification setup
+    evaluator = None
+    if model is not None:
+        model.eval()
+        # device = next(model.parameters()).device
+        # from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator
+        # evaluator = ActionHistoryTransformerEvaluator(model, device, block_size, action_vocab, verbose=False)
+
+    dd_n = defaultdict(int)
+    dd_win0 = defaultdict(int)
+    dd_win1 = defaultdict(int)
+    dd_draw = defaultdict(int)
+
+    # Iterate over dataset
+    for traj in td:
+        actions = traj.action[traj.padding_mask]
+        # policies = traj.policy[traj.padding_mask]
+        values = traj.value[traj.padding_mask]
+        traj_len = actions.size(0)
+
+        total_actions += len(actions)
+        final_values = values[-1]  # tensor shape (2,)
+
+        for key_len in range(min(3, traj_len)):
+            key = tuple(a.item() for a in actions[:key_len])
+            dd_n[key] += 1
+            if final_values[0] > final_values[1]:
+                dd_win0[key] += 1
+            elif final_values[1] > final_values[0]:
+                dd_win1[key] += 1
+            else:
+                dd_draw[key] += 1
+
+    # Print basic stats
+    print("Dataset Stats:")
+    print(f"  Trajectories: {len(td)}")
+    print(f"  Total actions: {total_actions}")
+    print(f"  Avg trajectory length: {total_actions / len(td):.2f}")
+
+    print("Prefix Stats:")
+    if game is not None:
+        min_print_key = dd_n[()] * 0.05
+        all_actions = game.all_actions()
+        state0 = game.initial_state()
+        for key in sorted(dd_n.keys()):
+            if len(key) >= 2 and dd_n[key] < min_print_key:
+                # Don't print borking keys.
+                continue
+            win1_pct = 100 * dd_win0[key] / dd_n[key]
+            if evaluator is not None:
+                state = state0
+                for a in key:
+                    state = game.next_state(state, a)
+                eval_output = evaluator.evaluate(game, state, all_actions)
+                model_win1_pct = 100 * ((eval_output.player_values + 1) / 2)[0].item()
+            else:
+                model_win1_pct = None
+            # print(f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_prob:.2f} model-legal-policy={model_legal_policy}")
+            print(
+                f"actions={key}: {dd_n[key]} win={dd_win0[key]} loss={dd_win1[key]} draw={dd_draw[key]} win1%={win1_pct:.2f} model-win1%={model_win1_pct:.2f}"
+            )
