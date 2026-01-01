@@ -83,7 +83,7 @@ def serialize_state(state: Any) -> dict[str, Any]:
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html", context={"request": request})
 
 
 @app.post("/games/new")
@@ -227,10 +227,10 @@ async def get_game_state(game_id: int) -> dict[str, Any]:
     if "rows" not in response_data and hasattr(current_game_obj, "board_size"):
         response_data["rows"] = current_game_obj.board_size
         response_data["columns"] = current_game_obj.board_size
-        
+
     # Serialize legal actions for the frontend to highlight
     response_data["legal_actions"] = serialize_obj(game.legal_actions(state))
-        
+
     # Add options
     response_data["game_options"] = game_session["game_options"]
     response_data["player_options"] = game_session["player_options"]
@@ -259,10 +259,10 @@ async def make_move(game_id: int, action_data: dict[str, Any]) -> dict[str, Any]
         elif "row" in action_data and "col" in action_data:
             action = (int(action_data["row"]), int(action_data["col"]))
         else:
-             # Try to infer or use header
-             # Fallback for generic action
-             # Assuming single value action if not structured
-             action = list(action_data.values())[0]
+            # Try to infer or use header
+            # Fallback for generic action
+            # Assuming single value action if not structured
+            action = list(action_data.values())[0]
 
         if action not in game.legal_actions(state):
             return {"success": False, "error": f"Invalid move {action}. Legal: {game.legal_actions(state)}"}
@@ -333,7 +333,9 @@ async def serve_game_page(request: Request, game_type: str, game_id: int) -> HTM
         raise HTTPException(status_code=404, detail="Game not found")
 
     template_name = f"{game_type}.html"
-    return templates.TemplateResponse(request=request, name=template_name, context={"request": request, "game_type": game_type, "game_id": game_id})
+    return templates.TemplateResponse(
+        request=request, name=template_name, context={"request": request, "game_type": game_type, "game_id": game_id}
+    )
 
 
 if __name__ == "__main__":
