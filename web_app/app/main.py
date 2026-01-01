@@ -333,7 +333,7 @@ async def serve_game_page(request: Request, game_type: str, game_id: int) -> HTM
         raise HTTPException(status_code=404, detail="Game not found")
 
     template_name = f"{game_type}.html"
-    return templates.TemplateResponse(template_name, {"request": request, "game_type": game_type, "game_id": game_id})
+    return templates.TemplateResponse(request=request, name=template_name, context={"request": request, "game_type": game_type, "game_id": game_id})
 
 
 if __name__ == "__main__":
