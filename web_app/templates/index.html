@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}RGI Game Portal{% endblock %}
+
+{% block content %}
+<h1 class="text-center mb-4">RGI Game Portal</h1>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <!-- Connect 4 Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2>Connect 4</h2>
+            </div>
+            <div class="card-body">
+                <form id="connect4Form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="connect4Player1" class="form-label">Player 1:</label>
+                            <select class="form-select" id="connect4Player1" name="player1Type">
+                                <option value="human">Human</option>
+                                <option value="random">Random</option>
+                                <option value="minimax">Minimax</option>
+                                <option value="zerozero">ZeroZero</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="connect4Player2" class="form-label">Player 2:</label>
+                            <select class="form-select" id="connect4Player2" name="player2Type">
+                                <option value="human">Human</option>
+                                <option value="random">Random</option>
+                                <option value="minimax">Minimax</option>
+                                <option value="zerozero">ZeroZero</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Placeholder for additional Connect 4 options -->
+                    <div id="connect4Options" class="mb-3">
+                        <!-- Additional options can be added here -->
+                    </div>
+                    <button type="submit" class="btn btn-primary">Start Connect 4 Game</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Othello Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2>Othello</h2>
+            </div>
+            <div class="card-body">
+                <form id="othelloForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="othelloPlayer1" class="form-label">Player 1:</label>
+                            <select class="form-select" id="othelloPlayer1" name="player1Type">
+                                <option value="human">Human</option>
+                                <option value="random">Random</option>
+                                <option value="minimax">Minimax</option>
+                                <option value="zerozero">ZeroZero</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="othelloPlayer2" class="form-label">Player 2:</label>
+                            <select class="form-select" id="othelloPlayer2" name="player2Type">
+                                <option value="human">Human</option>
+                                <option value="random">Random</option>
+                                <option value="minimax">Minimax</option>
+                                <option value="zerozero">ZeroZero</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Placeholder for additional Othello options -->
+                    <div id="othelloOptions" class="mb-3">
+                        <!-- Additional options can be added here -->
+                    </div>
+                    <button type="submit" class="btn btn-primary">Start Othello Game</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="{{ url_for('static', path='index.js') }}"></script>
+{% endblock %}
