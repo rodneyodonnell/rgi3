@@ -223,7 +223,14 @@ async def get_game_state(game_id: int) -> dict[str, Any]:
         response_data["rows"] = current_game_obj.height
     if hasattr(current_game_obj, "width"):
         response_data["columns"] = current_game_obj.width
-
+    # Fallback for Othello or square games
+    if "rows" not in response_data and hasattr(current_game_obj, "board_size"):
+        response_data["rows"] = current_game_obj.board_size
+        response_data["columns"] = current_game_obj.board_size
+        
+    # Serialize legal actions for the frontend to highlight
+    response_data["legal_actions"] = serialize_obj(game.legal_actions(state))
+        
     # Add options
     response_data["game_options"] = game_session["game_options"]
     response_data["player_options"] = game_session["player_options"]
@@ -249,10 +256,13 @@ async def make_move(game_id: int, action_data: dict[str, Any]) -> dict[str, Any]
         # For Connect4, action is just column integer
         if "column" in action_data:
             action = int(action_data["column"])
+        elif "row" in action_data and "col" in action_data:
+            action = (int(action_data["row"]), int(action_data["col"]))
         else:
-            # Try to infer or use header
-            # Fallback for generic action
-            action = list(action_data.values())[0]
+             # Try to infer or use header
+             # Fallback for generic action
+             # Assuming single value action if not structured
+             action = list(action_data.values())[0]
 
         if action not in game.legal_actions(state):
             return {"success": False, "error": f"Invalid move {action}. Legal: {game.legal_actions(state)}"}
