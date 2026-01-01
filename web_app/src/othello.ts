@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // OthelloGame.legal_actions calls _get_legal_moves -> adds _to_human_coords.
         // So legal actions are 1-based (row, col).
         // My loop is 0-based.
-        const human_r = row + 1
+        const human_r = data.rows - row
         const human_c = col + 1
 
         // Check legal actions. data.legal_actions is likely [[r, c], [r, c]] (list of lists due to json)
