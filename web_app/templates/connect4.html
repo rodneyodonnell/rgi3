@@ -1,0 +1,69 @@
+{% extends "game.html" %}
+
+{% block head %}
+{{ super() }}
+<style>
+    #game .grid-container {
+        display: grid;
+        grid-template-rows: repeat(6, 100px);
+        grid-template-columns: repeat(7, 100px);
+        gap: 5px;
+        justify-content: center;
+        margin-bottom: 20px;
+    }
+    #game .grid-cell {
+        width: 100px;
+        height: 100px;
+        background-color: #007bff;
+        border-radius: 50%;
+        position: relative;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    #game .grid-cell:hover {
+        background-color: #0056b3;
+    }
+    #game .grid-cell::after {
+        content: '';
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        background-color: white;
+        transition: all 0.3s ease;
+    }
+    #game .grid-cell.player1::after {
+        background-color: red;
+    }
+    #game .grid-cell.player2::after {
+        background-color: yellow;
+    }
+    #game .grid-cell.last-move::after {
+        box-shadow: inset 0 0 0 5px #32CD32, 0 0 10px #32CD32;
+    }
+    @media (max-width: 768px) {
+        #game .grid-container {
+            grid-template-rows: repeat(6, 60px);
+            grid-template-columns: repeat(7, 60px);
+            gap: 3px;
+        }
+        #game .grid-cell {
+            width: 60px;
+            height: 60px;
+        }
+        #game .grid-cell::after {
+            top: 3px;
+            left: 3px;
+            width: 54px;
+            height: 54px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="{{ url_for('static', path='connect4.js') }}"></script>
+{% endblock %}

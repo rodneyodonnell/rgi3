@@ -1,0 +1,70 @@
+{% extends "game.html" %}
+
+{% block head %}
+{{ super() }}
+<style>
+    #game .grid-container {
+        display: grid;
+        /* Rows and cols set dynamically by JS or default to 8 */
+        grid-template-rows: repeat(8, 60px);
+        grid-template-columns: repeat(8, 60px);
+        gap: 2px;
+        justify-content: center;
+        background-color: #1a1a1a;
+        padding: 5px;
+        border: 4px solid #444;
+    }
+
+    #game .grid-cell {
+        width: 60px;
+        height: 60px;
+        background-color: #2E5739;
+        border: 1px solid #102e1a;
+        position: relative;
+        cursor: pointer;
+    }
+
+    #game .grid-cell::after {
+        content: '';
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background-color: transparent;
+        /* Empty */
+        transition: all 0.3s ease;
+    }
+
+    #game .grid-cell.player1::after {
+        background-color: #000;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+
+    #game .grid-cell.player2::after {
+        background-color: #fff;
+        box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+    }
+
+    #game .grid-cell.legal-move {
+        background-color: #3a6b4a;
+    }
+
+    #game .grid-cell.legal-move::before {
+        content: '';
+        position: absolute;
+        top: 25px;
+        left: 25px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: rgba(255, 255, 255, 0.3);
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="{{ url_for('static', path='othello.js') }}"></script>
+{% endblock %}
