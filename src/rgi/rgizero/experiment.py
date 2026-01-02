@@ -385,7 +385,12 @@ class ExperimentRunner:
         )
 
         trainer = Trainer(
-            model=model, train_config=train_config, train_loader=train_loader, val_loader=val_loader, device=self.device
+            model=model,
+            train_config=train_config,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            device=self.device,
+            model_dir=str(self.models_dir / train_config.model_version),
         )
 
         trainer.train()

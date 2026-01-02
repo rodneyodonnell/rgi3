@@ -63,7 +63,13 @@ class TrainConfig:
 
 class Trainer:
     def __init__(
-        self, model: nn.Module, train_config: TrainConfig, train_loader: DataLoader, val_loader: DataLoader, device: str
+        self,
+        model: nn.Module,
+        train_config: TrainConfig,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        device: str,
+        model_dir: str | None = None,
     ):
         self.model = model
         self.train_config = train_config
@@ -90,7 +96,10 @@ class Trainer:
                 project=self.train_config.wandb_project, name=self.train_config.wandb_run_name, config=self.model_config
             )
         self.ctx = transformer_common.get_ctx(self.train_config.dtype, self.device)
-        self.model_dir = transformer_common.model_dir(self.train_config.model_name, self.train_config.model_version)
+        if model_dir:
+            self.model_dir = model_dir
+        else:
+            self.model_dir = transformer_common.model_dir(self.train_config.model_name, self.train_config.model_version)
         os.makedirs(self.model_dir, exist_ok=True)
         self.no_improve_count = 0
         self.early_stop = False
