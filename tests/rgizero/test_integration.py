@@ -282,9 +282,9 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
     config = ExperimentConfig(
         experiment_name="test-elo-progression",
         game_name="count21",
-        num_generations=3,  # Fewer generations but more data each
-        num_games_per_gen=200,  # Enough games for consistent +50 ELO improvement
-        num_simulations=50,  # Higher quality MCTS
+        num_generations=3,
+        num_games_per_gen=500,  # Large dataset for reliable learning
+        num_simulations=50,
         seed=42,
     )
 
@@ -392,6 +392,190 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
         print(f"Trained models better than random: {num_better_than_random}/{len(all_trained_elos)}")
 
         print(f"✓ ELO test passed: Training shows strong improvement (Improvement: {elo_improvement:+.1f} ELO)")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_elo_progression_connect4(temp_experiment_dir, minimal_training_args):
+    """Test ELO progression for Connect4."""
+    config = ExperimentConfig(
+        experiment_name="test-elo-connect4",
+        game_name="connect4",
+        num_generations=3,
+        num_games_per_gen=500,  # Large dataset for reliable learning
+        num_simulations=50,
+        seed=42,
+    )
+
+    runner = ExperimentRunner(
+        config=config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
+
+    await runner.run_async()
+
+    # Load all models
+    models = {gen_id: runner.load_model(gen_id) for gen_id in range(config.num_generations + 1)}
+
+    # Run tournament (same logic as count21 test)
+    @asynccontextmanager
+    async def create_all_factories():
+        evaluators = {}
+        factories = {}
+
+        for gen_id, model in models.items():
+            serial_eval = ActionHistoryTransformerEvaluator(
+                model,
+                device=runner.device,
+                block_size=runner.n_max_context,
+                vocab=runner.action_vocab,
+                verbose=False,
+            )
+            async_eval = AsyncNetworkEvaluator(
+                base_evaluator=serial_eval,
+                max_batch_size=32,
+                verbose=False,
+            )
+            await async_eval.start()
+            evaluators[gen_id] = async_eval
+
+            def make_factory(evaluator):
+                def factory():
+                    rng = np.random.default_rng(np.random.randint(0, 2**31))
+                    return AlphazeroPlayer(
+                        runner.game,
+                        evaluator,
+                        rng=rng,
+                        add_noise=False,
+                        simulations=20,
+                    )
+                return factory
+
+            factories[f"gen_{gen_id}"] = make_factory(async_eval)
+
+        try:
+            yield factories
+        finally:
+            for evaluator in evaluators.values():
+                await evaluator.stop()
+
+    async with create_all_factories() as player_factories:
+        tournament = Tournament(runner.game, player_factories, initial_elo=1000)
+        await tournament.run(num_games=100, concurrent_games=10)
+
+        elo_gen0 = tournament.stats["gen_0"].elo
+        all_trained_elos = [tournament.stats[f"gen_{g}"].elo for g in range(1, config.num_generations + 1)]
+        best_trained_elo = max(all_trained_elos)
+        best_trained_gen = all_trained_elos.index(best_trained_elo) + 1
+
+        print(f"\nConnect4 Results:")
+        print(f"Gen 0 (random): {elo_gen0:.1f}")
+        print(f"Best trained: Gen {best_trained_gen}, ELO={best_trained_elo:.1f}")
+
+        elo_improvement = best_trained_elo - elo_gen0
+        print(f"\nELO Improvement: {elo_improvement:+.1f} ELO")
+
+        assert elo_improvement > 50, (
+            f"Connect4: Best trained model (Gen {best_trained_gen}, ELO={best_trained_elo:.1f}) "
+            f"did not beat random (ELO={elo_gen0:.1f}) by at least 50 ELO. "
+            f"Improvement: {elo_improvement:+.1f} ELO."
+        )
+
+        print(f"✓ Connect4 ELO test passed (Improvement: {elo_improvement:+.1f} ELO)")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_elo_progression_othello(temp_experiment_dir, minimal_training_args):
+    """Test ELO progression for Othello."""
+    config = ExperimentConfig(
+        experiment_name="test-elo-othello",
+        game_name="othello",
+        num_generations=4,  # Extra generation for complex game
+        num_games_per_gen=500,  # Large dataset for reliable learning
+        num_simulations=50,
+        seed=42,
+    )
+
+    runner = ExperimentRunner(
+        config=config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
+
+    await runner.run_async()
+
+    # Load all models
+    models = {gen_id: runner.load_model(gen_id) for gen_id in range(config.num_generations + 1)}
+
+    # Run tournament (same logic as count21 test)
+    @asynccontextmanager
+    async def create_all_factories():
+        evaluators = {}
+        factories = {}
+
+        for gen_id, model in models.items():
+            serial_eval = ActionHistoryTransformerEvaluator(
+                model,
+                device=runner.device,
+                block_size=runner.n_max_context,
+                vocab=runner.action_vocab,
+                verbose=False,
+            )
+            async_eval = AsyncNetworkEvaluator(
+                base_evaluator=serial_eval,
+                max_batch_size=32,
+                verbose=False,
+            )
+            await async_eval.start()
+            evaluators[gen_id] = async_eval
+
+            def make_factory(evaluator):
+                def factory():
+                    rng = np.random.default_rng(np.random.randint(0, 2**31))
+                    return AlphazeroPlayer(
+                        runner.game,
+                        evaluator,
+                        rng=rng,
+                        add_noise=False,
+                        simulations=20,
+                    )
+                return factory
+
+            factories[f"gen_{gen_id}"] = make_factory(async_eval)
+
+        try:
+            yield factories
+        finally:
+            for evaluator in evaluators.values():
+                await evaluator.stop()
+
+    async with create_all_factories() as player_factories:
+        tournament = Tournament(runner.game, player_factories, initial_elo=1000)
+        await tournament.run(num_games=100, concurrent_games=10)
+
+        elo_gen0 = tournament.stats["gen_0"].elo
+        all_trained_elos = [tournament.stats[f"gen_{g}"].elo for g in range(1, config.num_generations + 1)]
+        best_trained_elo = max(all_trained_elos)
+        best_trained_gen = all_trained_elos.index(best_trained_elo) + 1
+
+        print(f"\nOthello Results:")
+        print(f"Gen 0 (random): {elo_gen0:.1f}")
+        print(f"Best trained: Gen {best_trained_gen}, ELO={best_trained_elo:.1f}")
+
+        elo_improvement = best_trained_elo - elo_gen0
+        print(f"\nELO Improvement: {elo_improvement:+.1f} ELO")
+
+        assert elo_improvement > 50, (
+            f"Othello: Best trained model (Gen {best_trained_gen}, ELO={best_trained_elo:.1f}) "
+            f"did not beat random (ELO={elo_gen0:.1f}) by at least 50 ELO. "
+            f"Improvement: {elo_improvement:+.1f} ELO."
+        )
+
+        print(f"✓ Othello ELO test passed (Improvement: {elo_improvement:+.1f} ELO)")
 
 
 @pytest.mark.asyncio
