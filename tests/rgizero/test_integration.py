@@ -283,8 +283,8 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
         experiment_name="test-elo-progression",
         game_name="count21",
         num_generations=3,  # Fewer generations but more data each
-        num_games_per_gen=120,  # More games per generation for better training
-        num_simulations=40,  # More MCTS simulations for better quality
+        num_games_per_gen=200,  # Enough games for consistent +50 ELO improvement
+        num_simulations=50,  # Higher quality MCTS
         seed=42,
     )
 
@@ -376,11 +376,14 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
         print(f"Best trained model: Gen {best_trained_gen}, ELO={best_trained_elo:.1f}")
         print(f"All trained ELOs: {[f'{e:.1f}' for e in all_trained_elos]}")
 
-        # The best trained model should beat random (allowing significant variance due to small dataset)
-        # With only 120 games/gen and tiny model, we expect high variance
-        assert best_trained_elo > elo_gen0 - 80, (
-            f"Best trained model (Gen {best_trained_gen}, ELO={best_trained_elo:.1f}) is much worse "
-            f"than random (Gen 0, ELO={elo_gen0:.1f}). "
+        # The best trained model should beat random by at least 50 ELO
+        elo_improvement = best_trained_elo - elo_gen0
+        print(f"\nELO Improvement: {elo_improvement:+.1f} ELO")
+
+        assert elo_improvement > 50, (
+            f"Best trained model (Gen {best_trained_gen}, ELO={best_trained_elo:.1f}) did not beat "
+            f"random (Gen 0, ELO={elo_gen0:.1f}) by at least 50 ELO. "
+            f"Improvement: {elo_improvement:+.1f} ELO. "
             f"This suggests training is not working. Check that START tokens match between train/inference."
         )
 
@@ -388,7 +391,7 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
         num_better_than_random = sum(1 for elo in all_trained_elos if elo > elo_gen0 - 10)
         print(f"Trained models better than random: {num_better_than_random}/{len(all_trained_elos)}")
 
-        print(f"✓ ELO test passed: Training shows learning signal (best trained: {best_trained_elo:.1f} vs random: {elo_gen0:.1f})")
+        print(f"✓ ELO test passed: Training shows strong improvement (Improvement: {elo_improvement:+.1f} ELO)")
 
 
 @pytest.mark.asyncio

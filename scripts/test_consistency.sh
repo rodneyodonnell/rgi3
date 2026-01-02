@@ -81,6 +81,25 @@ echo "Failed:     $FAILED"
 echo "Success rate: $(echo "scale=1; $PASSED * 100 / $NUM_RUNS" | bc)%"
 echo
 
+# For ELO tests, show ELO statistics
+if [ "$TEST_TYPE" = "elo" ]; then
+    echo
+    echo "ELO IMPROVEMENT STATISTICS:"
+    echo "-----------------------------------"
+
+    # Extract ELO improvements from all runs
+    for i in $(seq 1 $NUM_RUNS); do
+        if [ -f "$LOGDIR/run-$i.log" ]; then
+            # Look for "Improvement: +X.X ELO" pattern
+            improvement=$(grep -oE "Improvement: [+-][0-9]+\.[0-9]+ ELO" "$LOGDIR/run-$i.log" 2>/dev/null | head -1 | grep -oE "[+-][0-9]+\.[0-9]+")
+            if [ -n "$improvement" ]; then
+                echo "Run $i: ${improvement} ELO"
+            fi
+        fi
+    done
+    echo
+fi
+
 if [ $FAILED -eq 0 ]; then
     echo "✓ All tests passed consistently!"
     exit 0
