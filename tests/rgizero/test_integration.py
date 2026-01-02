@@ -43,19 +43,19 @@ def minimal_training_args():
         # Very tiny model for fast convergence in tests
         "n_layer": 2,
         "n_head": 4,
-        "n_embd": 64,  # Larger embedding for better capacity
+        "n_embd": 32,  # Compact embedding to prevent overfitting
         "n_max_context": 100,  # Use fallback size that works for all games
-        "dropout": 0.0,
+        "dropout": 0.1,  # Add dropout for regularization
         "bias": False,
         # Fast training - optimized for small dataset
-        "batch_size": 16,  # Smaller batches for better gradients with small data
+        "batch_size": 32,  # Larger batches for better stability
         "gradient_accumulation_steps": 1,
-        "max_iters": 500,  # More iterations to allow learning
-        "max_epochs": 10,  # Allow multiple passes through data
-        "learning_rate": 0.001,  # Lower LR for stability
+        "max_iters": 1000,  # More iterations to allow learning
+        "max_epochs": 50,  # Allow multiple passes through data
+        "learning_rate": 0.0005,  # Lower LR for stability
         "decay_lr": True,
-        "min_lr": 0.0001,
-        "lr_decay_iters": 500,
+        "min_lr": 0.00005,
+        "lr_decay_iters": 1000,
         "warmup_iters": 20,  # Slightly longer warmup
         "weight_decay": 0.01,  # Lower weight decay to not constrain small model
         "beta1": 0.9,
@@ -65,7 +65,7 @@ def minimal_training_args():
         "eval_iters": 20,
         "log_interval": 50,
         "eval_interval": 50,
-        "early_stop_patience": 5,  # Allow more patience for noisy small dataset
+        "early_stop_patience": 20,  # Allow more patience for noisy small dataset
     }
 
 
@@ -181,7 +181,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
         game_name="count21",
         num_generations=3,
         num_games_per_gen=100,  # More games for better training
-        num_simulations=20,
+        num_simulations=50,
         seed=42,
     )
 
