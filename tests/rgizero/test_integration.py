@@ -489,7 +489,20 @@ async def test_elo_progression_connect4(temp_experiment_dir, minimal_training_ar
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_elo_progression_othello(temp_experiment_dir, minimal_training_args):
-    """Test ELO progression for Othello."""
+    """
+    Test ELO progression for Othello.
+
+    Othello is a complex game requiring significant training to beat random play.
+    Target runtime: ~60 minutes with current settings.
+
+    Hyperparameters can be adjusted to balance runtime vs reliability:
+    - num_generations: Number of training iterations (currently 4)
+    - num_games_per_gen: Self-play games per generation (currently 500)
+    - num_simulations: MCTS simulations during self-play (currently 50)
+    - tournament_games: Tournament size for ELO evaluation (currently 500)
+    """
+    import time
+
     config = ExperimentConfig(
         experiment_name="test-elo-othello",
         game_name="othello",
@@ -506,7 +519,10 @@ async def test_elo_progression_othello(temp_experiment_dir, minimal_training_arg
         progress_bar=False,
     )
 
+    test_start = time.time()
     await runner.run_async()
+    training_time = time.time() - test_start
+    print(f"\nTotal training time: {training_time:.1f}s ({training_time/60:.1f} min)")
 
     # Load all models
     models = {gen_id: runner.load_model(gen_id) for gen_id in range(config.num_generations + 1)}
@@ -555,7 +571,12 @@ async def test_elo_progression_othello(temp_experiment_dir, minimal_training_arg
 
     async with create_all_factories() as player_factories:
         tournament = Tournament(runner.game, player_factories, initial_elo=1000)
-        await tournament.run(num_games=100, concurrent_games=10)
+
+        # Larger tournament for more reliable ELO measurement
+        tournament_games = 500
+        tournament_start = time.time()
+        await tournament.run(num_games=tournament_games, concurrent_games=10)
+        tournament_time = time.time() - tournament_start
 
         elo_gen0 = tournament.stats["gen_0"].elo
         all_trained_elos = [tournament.stats[f"gen_{g}"].elo for g in range(1, config.num_generations + 1)]
@@ -568,6 +589,8 @@ async def test_elo_progression_othello(temp_experiment_dir, minimal_training_arg
 
         elo_improvement = best_trained_elo - elo_gen0
         print(f"\nELO Improvement: {elo_improvement:+.1f} ELO")
+        print(f"Tournament time: {tournament_time:.1f}s ({tournament_games} games, {tournament_time/tournament_games:.2f}s/game)")
+        print(f"\nTotal test time: {time.time() - test_start:.1f}s ({(time.time() - test_start)/60:.1f} min)")
 
         assert elo_improvement > 50, (
             f"Othello: Best trained model (Gen {best_trained_gen}, ELO={best_trained_elo:.1f}) "

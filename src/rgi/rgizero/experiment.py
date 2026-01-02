@@ -4,6 +4,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Any
+import time
 
 import torch
 import numpy as np
@@ -252,6 +253,8 @@ class ExperimentRunner:
 
     async def play_generation_async(self, model, gen_id, write_dataset=True):
         """Run self-play and save trajectory dataset."""
+        start_time = time.time()
+
         # Setup Evaluator
         serial_evaluator = ActionHistoryTransformerEvaluator(
             model, device=self.device, block_size=self.n_max_context, vocab=self.action_vocab
@@ -279,6 +282,9 @@ class ExperimentRunner:
             results = await self._play_games_async(player_factory)
         finally:
             await async_evaluator.stop()
+
+        elapsed = time.time() - start_time
+        print(f"Self-play completed in {elapsed:.1f}s ({len(results)} games, {elapsed/len(results):.2f}s/game)")
 
         # Write Dataset
         if write_dataset:
@@ -361,6 +367,7 @@ class ExperimentRunner:
 
     def train_generation(self, model, gen_id) -> ActionHistoryTransformer:
         """Train model on all data up to gen_id."""
+        start_time = time.time()
 
         # Get all training data locations (handling forks)
         dataset_paths = self.get_trajectory_paths(gen_id)
@@ -394,6 +401,9 @@ class ExperimentRunner:
         )
 
         trainer.train()
+
+        elapsed = time.time() - start_time
+        print(f"Training completed in {elapsed:.1f}s")
 
         self.save_model(model, gen_id, {"final_loss": trainer.estimate_loss()})
 
