@@ -62,6 +62,11 @@ exclude = ["*.ipynb"]
 
 
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests (slow, excluded by default)",
+]
+
 [tool.ty.src]
 exclude = [
   "src/rgi/nanogpt/fork/**",

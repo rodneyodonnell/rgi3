@@ -29,8 +29,8 @@ class TrajectoryTuple:
     padding_mask: torch.Tensor | None  # (L,)
 
 
-# Token can be any hashable type? Restrict to `str | int` for now.
-Token = str | int
+# Token can be any hashable type
+Token = str | int | tuple
 
 
 @dataclass
@@ -50,11 +50,25 @@ class Vocab:
 
     @classmethod
     def from_dict(cls, meta: dict) -> "Vocab":
-        itos: Sequence[Token] = meta.get("itos")  # type: ignore
+        itos_raw: Sequence = meta.get("itos")  # type: ignore
+        # Convert string representations back to tuples if needed
+        itos: list[Token] = []
+        for item in itos_raw:
+            if isinstance(item, str) and item.startswith("(") and item.endswith(")"):
+                # Try to parse as tuple
+                try:
+                    itos.append(eval(item))  # Safe since we control the format
+                except:
+                    itos.append(item)
+            else:
+                itos.append(item)
         return Vocab(itos)
 
     def to_dict(self) -> dict:
-        return {"vocab_size": self.vocab_size, "itos": self.itos, "stoi": self.stoi}
+        # Convert tuples to strings for JSON serialization
+        itos_serializable = [str(token) if isinstance(token, tuple) else token for token in self.itos]
+        stoi_serializable = {str(k) if isinstance(k, tuple) else k: v for k, v in self.stoi.items()}
+        return {"vocab_size": self.vocab_size, "itos": itos_serializable, "stoi": stoi_serializable}
 
     def encode(self, tokens: Sequence[Token]) -> Sequence[int]:
         return np.array([self.stoi[token] for token in tokens])
