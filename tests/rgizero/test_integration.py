@@ -70,6 +70,7 @@ def minimal_training_args():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_full_training_pipeline_count21(temp_experiment_dir, minimal_training_args):
     """
     Test full training pipeline on Count21 game.
@@ -121,6 +122,7 @@ async def test_full_training_pipeline_count21(temp_experiment_dir, minimal_train
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_full_training_pipeline_connect4(temp_experiment_dir, minimal_training_args):
     """
     Test full training pipeline on Connect4 (more realistic game).
@@ -162,6 +164,7 @@ async def test_full_training_pipeline_connect4(temp_experiment_dir, minimal_trai
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_model_improvement_validation(temp_experiment_dir, minimal_training_args):
     """
     Test that trained models show improvement over random baseline.
@@ -261,6 +264,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_elo_progression_across_generations(temp_experiment_dir, minimal_training_args):
     """
     Test ELO ratings show general improvement trend across generations.
@@ -387,6 +391,7 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_experiment_forking(temp_experiment_dir, minimal_training_args):
     """
     Test experiment forking functionality.

@@ -57,6 +57,7 @@ def minimal_training_args():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_model_predictions_vs_training_data(temp_experiment_dir, minimal_training_args):
     """
     Test that model predictions correlate with actual win rates from training data.
@@ -169,17 +170,19 @@ async def test_model_predictions_vs_training_data(temp_experiment_dir, minimal_t
 
     with torch.no_grad():
         for traj in val_trajectories:
-            # Get model outputs
-            actions = traj.action.unsqueeze(0).to(runner.device)  # Add batch dim
-            targets_policy = traj.policy.unsqueeze(0).to(runner.device)
-            targets_value = traj.value.unsqueeze(0).to(runner.device)
+            # Get model outputs - note the model expects idx, policy_target, value_target
+            # Convert to float32 for MPS compatibility
+            idx = traj.action.unsqueeze(0).to(runner.device)  # Add batch dim
+            policy_target = traj.policy.unsqueeze(0).float().to(runner.device)
+            value_target = traj.value.unsqueeze(0).float().to(runner.device)
+            padding_mask = traj.padding_mask.unsqueeze(0).to(runner.device) if traj.padding_mask is not None else None
 
             # Gen 0 (random) model
-            _, loss_dict_gen0, loss_gen0 = model_gen0(actions, targets_policy, targets_value)
+            _, loss_dict_gen0, loss_gen0 = model_gen0(idx, policy_target, value_target, padding_mask)
             gen0_losses.append(float(loss_gen0))
 
             # Final (trained) model
-            _, loss_dict_final, loss_final = model_final(actions, targets_policy, targets_value)
+            _, loss_dict_final, loss_final = model_final(idx, policy_target, value_target, padding_mask)
             final_losses.append(float(loss_final))
 
     avg_loss_gen0 = np.mean(gen0_losses)
