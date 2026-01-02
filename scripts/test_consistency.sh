@@ -2,16 +2,25 @@
 # Run integration tests multiple times in parallel to verify consistency
 #
 # Usage:
-#   ./scripts/test_consistency.sh                    # Run 10 parallel test runs
+#   ./scripts/test_consistency.sh                    # Run 10 parallel test runs (loss-based test)
 #   ./scripts/test_consistency.sh 5                  # Run 5 parallel test runs
-#   ./scripts/test_consistency.sh 10 count21         # Test specific game
+#   ./scripts/test_consistency.sh 10 elo             # Use ELO test instead
 
 set -e
 
 NUM_RUNS=${1:-10}
-GAME=${2:-"count21"}
+TEST_TYPE=${2:-"loss"}  # "loss" or "elo"
 
-echo "Running $NUM_RUNS parallel integration test runs for $GAME..."
+if [ "$TEST_TYPE" = "elo" ]; then
+    TEST_NAME="test_elo_progression_across_generations"
+    echo "Running $NUM_RUNS parallel ELO-based integration test runs..."
+    echo "Note: ELO tests have higher variance due to small dataset."
+else
+    TEST_NAME="test_model_predictions_vs_training_data"
+    echo "Running $NUM_RUNS parallel loss-based integration test runs..."
+    echo "Loss-based tests are more reliable for consistency checking."
+fi
+
 echo "This helps verify the tests pass consistently and not just due to luck."
 echo
 
@@ -22,11 +31,18 @@ mkdir -p "$LOGDIR"
 echo "Logs will be saved to: $LOGDIR"
 echo
 
+# Select test file based on test type
+if [ "$TEST_TYPE" = "elo" ]; then
+    TEST_FILE="tests/rgizero/test_integration.py::$TEST_NAME"
+else
+    TEST_FILE="tests/rgizero/test_model_predictions.py::$TEST_NAME"
+fi
+
 # Launch parallel test runs
 for i in $(seq 1 $NUM_RUNS); do
     (
         echo "Starting run $i..."
-        uv run pytest tests/rgizero/test_integration.py::test_elo_progression_across_generations \
+        uv run pytest "$TEST_FILE" \
             -v -s \
             > "$LOGDIR/run-$i.log" 2>&1
         EXIT_CODE=$?
