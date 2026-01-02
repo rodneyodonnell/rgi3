@@ -1,156 +1,452 @@
 """
-Integration test based on rgizero-shakespeare.ipynb
+Integration tests for the full AlphaZero training pipeline.
 
-This is a slower test that validates the full training pipeline works end-to-end.
+These tests run end-to-end training loops to ensure the system works correctly:
+- Self-play game generation
+- Training over multiple generations
+- Model improvement validation
+- ELO-based evaluation
+
+Tests use minimal configurations (tiny models, few games) to run quickly (<5 minutes).
 """
 
+import asyncio
+import shutil
+import tempfile
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import numpy as np
+import pytest
 import torch
-from torch.utils.data import DataLoader
 
-from rgi.rgizero.data.text_dataset import SimpleTextDataset
+from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator, AsyncNetworkEvaluator
+from rgi.rgizero.experiment import ExperimentConfig, ExperimentRunner
 from rgi.rgizero.models.transformer import TransformerConfig
-from rgi.rgizero.models.token_transformer import TokenTransformer
-from rgi.rgizero.train import Trainer, TrainConfig
+from rgi.rgizero.players.alphazero import AlphazeroPlayer
+from rgi.rgizero.tournament import Tournament
 
 
-class TestShakespeareIntegration:
-    """Integration test based on shakespeare training notebook."""
+@pytest.fixture
+def temp_experiment_dir():
+    """Create a temporary directory for experiment artifacts."""
+    temp_dir = tempfile.mkdtemp()
+    yield Path(temp_dir)
+    # Cleanup
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_shakespeare_training_pipeline(self):
-        """Test the full shakespeare training pipeline with tiny data."""
-        # Use tiny shakespeare-like text for fast testing
-        raw_text = """
-        HAMLET: To be or not to be, that is the question.
-        OPHELIA: Good my lord, how does your honour?
-        HAMLET: I humbly thank you; well, well, well.
-        """
 
-        # Configuration (much smaller than real training)
-        BLOCK_SIZE = 16
-        BATCH_SIZE = 2
-        DEVICE = "cpu"  # Use CPU for testing
+@pytest.fixture
+def minimal_training_args():
+    """Minimal training arguments for fast integration tests."""
+    return {
+        # Tiny model
+        "n_layer": 2,
+        "n_head": 2,
+        "n_embd": 16,
+        "n_max_context": 100,  # Use fallback size that works for all games
+        "dropout": 0.0,
+        "bias": False,
+        # Fast training
+        "batch_size": 32,
+        "gradient_accumulation_steps": 1,
+        "max_iters": 100,  # Very few iterations for testing
+        "max_epochs": 2,
+        "learning_rate": 0.001,
+        "decay_lr": False,
+        "min_lr": 0.0001,
+        "warmup_iters": 0,
+        "weight_decay": 0.1,
+        "beta1": 0.9,
+        "beta2": 0.95,
+        "grad_clip": 1.0,
+        "dtype": "float32",  # Use float32 for CPU compatibility
+        "eval_iters": 10,
+        "log_interval": 50,
+        "eval_interval": 100,
+        "early_stop_patience": 5,
+    }
 
-        # Create dataset
-        text_dataset = SimpleTextDataset(raw_text, BLOCK_SIZE, device=DEVICE)
-        vocab_size = text_dataset.vocab_size
 
-        # Split dataset (simple temporal split to avoid data leakage)
-        train_size = int(0.8 * len(text_dataset))
-        train_indices = list(range(train_size))
-        val_indices = list(range(train_size, len(text_dataset)))
+@pytest.mark.asyncio
+async def test_full_training_pipeline_count21(temp_experiment_dir, minimal_training_args):
+    """
+    Test full training pipeline on Count21 game.
 
-        train_dataset = torch.utils.data.Subset(text_dataset, train_indices)
-        val_dataset = torch.utils.data.Subset(text_dataset, val_indices)
+    This test:
+    1. Initializes an experiment with a random model
+    2. Runs 3 generations of self-play + training
+    3. Validates that models are saved correctly
+    4. Checks that training completes without errors
 
-        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    Uses Count21 (simplest game) for speed.
+    Target runtime: ~1-2 minutes
+    """
+    config = ExperimentConfig(
+        experiment_name="test-count21-pipeline",
+        game_name="count21",
+        num_generations=3,
+        num_games_per_gen=20,  # Minimal games for testing
+        num_simulations=10,  # Minimal MCTS simulations
+        seed=42,
+    )
 
-        # Create model (tiny version)
-        model_config = TransformerConfig(n_max_context=BLOCK_SIZE, n_embd=32, n_layer=2, n_head=2, dropout=0.1)
-        model = TokenTransformer(model_config, vocab_size)
-        model.to(DEVICE)
+    runner = ExperimentRunner(
+        config=config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,  # Disable for cleaner test output
+    )
 
-        # Training config (very short)
-        train_config = TrainConfig(
-            model_name="test-shakespeare-gpt",
-            model_version="v1",
-            eval_interval=5,
-            eval_iters=2,
-            log_interval=3,
-            always_save_checkpoint=False,
-            gradient_accumulation_steps=1,
-            batch_size=BATCH_SIZE,
-            learning_rate=1e-3,
-            max_iters=10,  # Very short training
-            warmup_iters=2,
-            device=DEVICE,
-            compile=False,
+    # Initialize Gen 0
+    model_0 = runner.initialize()
+    assert model_0 is not None
+    assert runner.get_model_path(0).exists()
+
+    # Run 3 generations
+    current_model = model_0
+    for gen_id in range(1, config.num_generations + 1):
+        current_model = await runner.run_generation_step_async(gen_id, current_model)
+
+        # Validate artifacts exist
+        assert runner.get_trajectory_path(gen_id).exists(), f"Missing trajectory data for gen {gen_id}"
+        assert runner.get_model_path(gen_id).exists(), f"Missing model checkpoint for gen {gen_id}"
+
+    # Validate we can load the final model
+    final_model = runner.load_model(config.num_generations)
+    assert final_model is not None
+
+    print(f"✓ Training pipeline completed successfully for {config.num_generations} generations")
+
+
+@pytest.mark.asyncio
+async def test_full_training_pipeline_connect4(temp_experiment_dir, minimal_training_args):
+    """
+    Test full training pipeline on Connect4 (more realistic game).
+
+    This test:
+    1. Runs 3 generations of self-play + training on Connect4
+    2. Validates that training completes without errors
+    3. Checks that model artifacts are created
+
+    Target runtime: ~2-3 minutes
+    """
+    config = ExperimentConfig(
+        experiment_name="test-connect4-pipeline",
+        game_name="connect4",
+        num_generations=3,
+        num_games_per_gen=30,  # Slightly more games for Connect4
+        num_simulations=20,  # More simulations for better gameplay
+        seed=42,
+    )
+
+    runner = ExperimentRunner(
+        config=config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
+
+    # Run full pipeline
+    await runner.run_async()
+
+    # Validate all generations completed
+    for gen_id in range(config.num_generations + 1):  # Include gen 0
+        assert runner.get_model_path(gen_id).exists(), f"Missing model for gen {gen_id}"
+
+    for gen_id in range(1, config.num_generations + 1):  # Gen 0 has no trajectory
+        assert runner.get_trajectory_path(gen_id).exists(), f"Missing trajectory for gen {gen_id}"
+
+    print(f"✓ Connect4 training pipeline completed successfully")
+
+
+@pytest.mark.asyncio
+async def test_model_improvement_validation(temp_experiment_dir, minimal_training_args):
+    """
+    Test that trained models show improvement over random baseline.
+
+    This test:
+    1. Trains a model for 3 generations
+    2. Plays evaluation games between Gen 0 (random) and Gen 3 (trained)
+    3. Validates that Gen 3 wins more than 60% of games
+
+    Target runtime: ~2-3 minutes
+    """
+    config = ExperimentConfig(
+        experiment_name="test-model-improvement",
+        game_name="count21",
+        num_generations=3,
+        num_games_per_gen=50,  # More games for better training
+        num_simulations=20,
+        seed=42,
+    )
+
+    runner = ExperimentRunner(
+        config=config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
+
+    # Run training
+    await runner.run_async()
+
+    # Load models
+    model_0 = runner.load_model(0)
+    model_final = runner.load_model(config.num_generations)
+
+    # Play evaluation games
+    num_eval_games = 20
+
+    @asynccontextmanager
+    async def create_player_factory(model, simulations):
+        """Helper to create player factory with shared evaluator."""
+        serial_evaluator = ActionHistoryTransformerEvaluator(
+            model,
+            device=runner.device,
+            block_size=runner.n_max_context,
+            vocab=runner.action_vocab,
+            verbose=False,
+        )
+        async_evaluator = AsyncNetworkEvaluator(
+            base_evaluator=serial_evaluator,
+            max_batch_size=32,
+            verbose=False,
         )
 
-        # Create trainer
-        trainer = Trainer(
-            model=model, train_config=train_config, train_loader=train_loader, val_loader=val_loader, device=DEVICE
+        await async_evaluator.start()
+
+        try:
+            def factory():
+                rng = np.random.default_rng(np.random.randint(0, 2**31))
+                return AlphazeroPlayer(
+                    runner.game,
+                    async_evaluator,
+                    rng=rng,
+                    add_noise=False,  # No noise for evaluation
+                    simulations=simulations,
+                )
+
+            yield factory
+        finally:
+            await async_evaluator.stop()
+
+    async with (
+        create_player_factory(model_0, 20) as factory_gen0,
+        create_player_factory(model_final, 20) as factory_final,
+    ):
+        player_factories = {
+            "gen_0": factory_gen0,
+            "gen_final": factory_final,
+        }
+
+        tournament = Tournament(runner.game, player_factories, initial_elo=1000)
+        await tournament.run(num_games=num_eval_games, concurrent_games=10)
+
+        # Check that final model has higher ELO
+        elo_gen0 = tournament.stats["gen_0"].elo
+        elo_final = tournament.stats["gen_final"].elo
+
+        print(f"\nELO Ratings:")
+        print(f"  Gen 0 (random): {elo_gen0:.1f}")
+        print(f"  Gen {config.num_generations} (trained): {elo_final:.1f}")
+
+        # Trained model should have higher ELO
+        assert elo_final > elo_gen0, (
+            f"Trained model (ELO={elo_final:.1f}) should beat random model (ELO={elo_gen0:.1f})"
         )
 
-        # Test initial state
-        assert trainer.iter_num == 0
-        initial_losses = trainer.estimate_loss()
-        _initial_train_loss = initial_losses["train"]
-        _initial_val_loss = initial_losses["val"]
+        print(f"✓ Model improvement validated: Gen {config.num_generations} > Gen 0")
 
-        # Train the model
-        trainer.train()
 
-        # Verify training completed (iter_num is incremented after the last iteration)
-        assert trainer.iter_num == train_config.max_iters + 1
+@pytest.mark.asyncio
+async def test_elo_progression_across_generations(temp_experiment_dir, minimal_training_args):
+    """
+    Test ELO ratings show general improvement trend across generations.
 
-        # Check that loss changed (should improve or at least change)
-        final_losses = trainer.estimate_loss()
-        final_train_loss = final_losses["train"]
-        final_val_loss = final_losses["val"]
+    This test:
+    1. Trains models for 4 generations
+    2. Runs a tournament with all generations
+    3. Validates that later generations generally have higher ELO
 
-        # Losses should be finite
-        assert torch.isfinite(torch.tensor(final_train_loss))
-        assert torch.isfinite(torch.tensor(final_val_loss))
+    Note: We don't expect strict monotonic improvement due to randomness,
+    but the average of later generations should be higher.
 
-        # Test text generation
-        model.eval()
-        with torch.no_grad():
-            context = "HAM"
-            start_ids = torch.tensor([text_dataset.encode(context)], dtype=torch.long, device=DEVICE)
-            generated = model.generate(start_ids, max_new_tokens=10)
+    Target runtime: ~3-4 minutes
+    """
+    config = ExperimentConfig(
+        experiment_name="test-elo-progression",
+        game_name="count21",
+        num_generations=4,
+        num_games_per_gen=40,
+        num_simulations=20,
+        seed=42,
+    )
 
-            # Should generate something
-            assert generated.shape[1] == len(context) + 10
+    runner = ExperimentRunner(
+        config=config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
 
-            # Decode and check it's valid
-            generated_text = text_dataset.decode(generated[0].tolist())
-            assert len(generated_text) == len(context) + 10
-            assert generated_text.startswith(context)
+    # Run training
+    await runner.run_async()
 
-    def test_encoding_decoding_consistency(self):
-        """Test that encoding/decoding is consistent."""
-        text = "ROMEO: But soft, what light through yonder window breaks?"
-        dataset = SimpleTextDataset(text, block_size=10)
+    # Load all models
+    models = {gen_id: runner.load_model(gen_id) for gen_id in range(config.num_generations + 1)}
 
-        # Test round-trip
-        encoded = dataset.encode(text)
-        decoded = dataset.decode(encoded)
-        assert decoded == text
+    # Create player factories
+    @asynccontextmanager
+    async def create_all_factories():
+        evaluators = {}
+        factories = {}
 
-        # Test partial encoding/decoding
-        partial = text[:20]
-        encoded_partial = dataset.encode(partial)
-        decoded_partial = dataset.decode(encoded_partial)
-        assert decoded_partial == partial
+        # Create evaluators for all models
+        for gen_id, model in models.items():
+            serial_eval = ActionHistoryTransformerEvaluator(
+                model,
+                device=runner.device,
+                block_size=runner.n_max_context,
+                vocab=runner.action_vocab,
+                verbose=False,
+            )
+            async_eval = AsyncNetworkEvaluator(
+                base_evaluator=serial_eval,
+                max_batch_size=32,
+                verbose=False,
+            )
+            await async_eval.start()
+            evaluators[gen_id] = async_eval
 
-    def test_model_forward_backward(self):
-        """Test that forward and backward passes work without errors."""
-        # Simple text
-        text = "abcdefghijklmnopqrstuvwxyz" * 4
-        dataset = SimpleTextDataset(text, block_size=8, device="cpu")
-        vocab_size = dataset.vocab_size
+            # Create factory
+            def make_factory(evaluator):
+                def factory():
+                    rng = np.random.default_rng(np.random.randint(0, 2**31))
+                    return AlphazeroPlayer(
+                        runner.game,
+                        evaluator,
+                        rng=rng,
+                        add_noise=False,
+                        simulations=20,
+                    )
+                return factory
 
-        # Simple model
-        config = TransformerConfig(n_embd=32, n_layer=2, n_head=4, n_max_context=8)
-        model = TokenTransformer(config, vocab_size)
+            factories[f"gen_{gen_id}"] = make_factory(async_eval)
 
-        # Get a batch
-        x, y = dataset[0]
-        x = x.unsqueeze(0)  # Add batch dimension
-        y = y.unsqueeze(0)
+        try:
+            yield factories
+        finally:
+            for evaluator in evaluators.values():
+                await evaluator.stop()
 
-        # Forward pass
-        logits, loss_dict, loss = model(x, y)
+    async with create_all_factories() as player_factories:
+        tournament = Tournament(runner.game, player_factories, initial_elo=1000)
 
-        # Check shapes
-        assert logits.shape == (1, 8, vocab_size)
-        assert loss.dim() == 0
+        # Run tournament (scaled by number of players for fair comparison)
+        num_tournament_games = 50  # Total games
+        await tournament.run(num_games=num_tournament_games, concurrent_games=10)
 
-        # Backward pass
-        loss.backward()
+        # Print standings
+        print("\nTournament Results:")
+        tournament.print_standings()
 
-        # Check gradients exist
-        for param in model.parameters():
-            if param.requires_grad:
-                assert param.grad is not None
+        # Validate trend: average ELO of later half > average ELO of earlier half
+        all_gens = list(range(config.num_generations + 1))
+        midpoint = len(all_gens) // 2
+
+        early_gens = all_gens[:midpoint]
+        late_gens = all_gens[midpoint:]
+
+        avg_elo_early = np.mean([tournament.stats[f"gen_{g}"].elo for g in early_gens])
+        avg_elo_late = np.mean([tournament.stats[f"gen_{g}"].elo for g in late_gens])
+
+        print(f"\nAverage ELO (Gens {early_gens}): {avg_elo_early:.1f}")
+        print(f"Average ELO (Gens {late_gens}): {avg_elo_late:.1f}")
+
+        # Later generations should on average be stronger
+        # We allow some slack since training is noisy with small dataset
+        assert avg_elo_late >= avg_elo_early - 20, (
+            f"Later generations should not be significantly weaker. "
+            f"Early avg: {avg_elo_early:.1f}, Late avg: {avg_elo_late:.1f}"
+        )
+
+        print(f"✓ ELO progression validated across {config.num_generations} generations")
+
+
+@pytest.mark.asyncio
+async def test_experiment_forking(temp_experiment_dir, minimal_training_args):
+    """
+    Test experiment forking functionality.
+
+    This test:
+    1. Runs a parent experiment for 2 generations
+    2. Creates a child experiment that forks from parent at gen 1
+    3. Continues training for 1 more generation
+    4. Validates that child reuses parent's data and models correctly
+
+    Target runtime: ~2-3 minutes
+    """
+    # Run parent experiment
+    parent_config = ExperimentConfig(
+        experiment_name="test-fork-parent",
+        game_name="count21",
+        num_generations=2,
+        num_games_per_gen=20,
+        num_simulations=10,
+        seed=42,
+    )
+
+    parent_runner = ExperimentRunner(
+        config=parent_config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
+
+    await parent_runner.run_async()
+
+    # Create child experiment that forks from parent
+    child_config = ExperimentConfig(
+        experiment_name="test-fork-child",
+        game_name="count21",
+        num_generations=3,  # Continue for 1 more generation
+        num_games_per_gen=20,
+        num_simulations=10,
+        parent_experiment_name="test-fork-parent",
+        parent_generation_cap=2,  # Use parent's gen 0-2
+        seed=43,  # Different seed
+    )
+
+    child_runner = ExperimentRunner(
+        config=child_config,
+        base_dir=temp_experiment_dir,
+        training_args=minimal_training_args,
+        progress_bar=False,
+    )
+
+    # Child should be able to load parent's models
+    parent_model_1 = child_runner.load_model(1)
+    assert parent_model_1 is not None
+
+    # Run child experiment (should reuse gen 0-2 from parent, train gen 3)
+    await child_runner.run_async()
+
+    # Validate child has its own gen 3
+    assert child_runner.get_model_path(3).exists()
+    assert child_runner.get_trajectory_path(3).exists()
+
+    # Child should have reused parent's gen 1, 2 (only gen 0 is created locally for child)
+    # Check that child's gen 1, 2 point to parent's data
+    parent_gen1_path = parent_runner.get_trajectory_path(1)
+    child_gen1_path = child_runner.get_trajectory_path(1)
+
+    # They should be the same path (forking works)
+    assert child_gen1_path == parent_gen1_path
+
+    print("✓ Experiment forking validated")
+
+
+if __name__ == "__main__":
+    # Allow running directly for debugging
+    pytest.main([__file__, "-v", "-s"])

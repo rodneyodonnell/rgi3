@@ -29,6 +29,42 @@ TODO: Add notebook showing this.
 -   Count21 (Simple counting game)
 -   Othello (Reversi)
 
+## Testing
+
+### Running Tests
+
+Run all tests:
+```bash
+uv run pytest
+```
+
+Run unit tests only (fast):
+```bash
+uv run pytest tests/ -m "not integration"
+```
+
+Run integration tests (full end-to-end pipeline, ~5-15 minutes):
+```bash
+uv run pytest tests/rgizero/test_integration.py -v
+```
+
+### Integration Tests
+
+The integration tests in `tests/rgizero/test_integration.py` validate the full AlphaZero training pipeline:
+
+- **`test_full_training_pipeline_count21`** - Basic pipeline test (3 generations, ~5 seconds)
+- **`test_full_training_pipeline_connect4`** - Connect4 training (3 generations, ~2-3 minutes)
+- **`test_model_improvement_validation`** - Validates trained model beats random baseline via ELO (~2-3 minutes)
+- **`test_elo_progression_across_generations`** - Validates ELO improvement trend across 4 generations (~3-4 minutes)
+- **`test_experiment_forking`** - Tests experiment forking/continuation (~2-3 minutes)
+
+These tests ensure you can make changes to the codebase without breaking the core training loop.
+
+Run a single test:
+```bash
+uv run pytest tests/rgizero/test_integration.py::test_full_training_pipeline_count21 -v -s
+```
+
 
 # nanoGPT.fork
 **nanoGPT.fork** is a fork & wrapper for nanoGPT to make it easier to call from other tools.
