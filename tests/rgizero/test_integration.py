@@ -42,21 +42,21 @@ def minimal_training_args():
     return {
         # Very tiny model for fast convergence in tests
         "n_layer": 2,
-        "n_head": 2,
-        "n_embd": 8,  # Even smaller for faster learning with limited data
+        "n_head": 4,
+        "n_embd": 64,  # Larger embedding for better capacity
         "n_max_context": 100,  # Use fallback size that works for all games
         "dropout": 0.0,
         "bias": False,
         # Fast training - optimized for small dataset
         "batch_size": 16,  # Smaller batches for better gradients with small data
         "gradient_accumulation_steps": 1,
-        "max_iters": 300,  # More iterations to allow learning
+        "max_iters": 500,  # More iterations to allow learning
         "max_epochs": 10,  # Allow multiple passes through data
-        "learning_rate": 0.005,  # Higher LR for faster initial learning
+        "learning_rate": 0.001,  # Lower LR for stability
         "decay_lr": True,
-        "min_lr": 0.0005,
-        "lr_decay_iters": 300,
-        "warmup_iters": 10,  # Short warmup
+        "min_lr": 0.0001,
+        "lr_decay_iters": 500,
+        "warmup_iters": 20,  # Slightly longer warmup
         "weight_decay": 0.01,  # Lower weight decay to not constrain small model
         "beta1": 0.9,
         "beta2": 0.95,
@@ -180,7 +180,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
         experiment_name="test-model-improvement",
         game_name="count21",
         num_generations=3,
-        num_games_per_gen=50,  # More games for better training
+        num_games_per_gen=100,  # More games for better training
         num_simulations=20,
         seed=42,
     )
@@ -200,7 +200,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
     model_final = runner.load_model(config.num_generations)
 
     # Play evaluation games
-    num_eval_games = 20
+    num_eval_games = 100
 
     @asynccontextmanager
     async def create_player_factory(model, simulations):
