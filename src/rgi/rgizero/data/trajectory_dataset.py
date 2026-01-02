@@ -247,7 +247,7 @@ def build_trajectory_loader(
     DataLoader[tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]],
 ]:
     tds = [
-        TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=False)
+        TrajectoryDataset(path.parent, path.name, block_size=block_size, prepend_start_token=True)
         for path in dataset_paths
     ]
     full_dataset = torch.utils.data.ConcatDataset(tds)

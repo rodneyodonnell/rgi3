@@ -65,6 +65,8 @@ Run a single test:
 uv run pytest tests/rgizero/test_integration.py::test_full_training_pipeline_count21 -v -s
 ```
 
+**Note on ELO variance**: With small test datasets (80 games/gen), ELO results can vary between runs. The `test_model_predictions` test is more reliable for validating that training works correctly.
+
 
 # nanoGPT.fork
 **nanoGPT.fork** is a fork & wrapper for nanoGPT to make it easier to call from other tools.
