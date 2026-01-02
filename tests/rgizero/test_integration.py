@@ -50,13 +50,13 @@ def minimal_training_args():
         # Fast training - optimized for small dataset
         "batch_size": 32,  # Larger batches for better stability
         "gradient_accumulation_steps": 1,
-        "max_iters": 1000,  # More iterations to allow learning
+        "max_iters": 5000,  # More iterations to allow learning
         "max_epochs": 50,  # Allow multiple passes through data
         "learning_rate": 0.0005,  # Lower LR for stability
         "decay_lr": True,
         "min_lr": 0.00005,
-        "lr_decay_iters": 1000,
-        "warmup_iters": 20,  # Slightly longer warmup
+        "lr_decay_iters": 5000,
+        "warmup_iters": 100,  # Scaled up warmup
         "weight_decay": 0.01,  # Lower weight decay to not constrain small model
         "beta1": 0.9,
         "beta2": 0.95,
@@ -179,9 +179,9 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
     config = ExperimentConfig(
         experiment_name="test-model-improvement",
         game_name="count21",
-        num_generations=3,
-        num_games_per_gen=100,  # More games for better training
-        num_simulations=50,
+        num_generations=5,  # More generations to recover from bad starts
+        num_games_per_gen=400,  # Significantly more games
+        num_simulations=100,  # Better teacher quality
         seed=42,
     )
 
@@ -200,7 +200,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
     model_final = runner.load_model(config.num_generations)
 
     # Play evaluation games
-    num_eval_games = 100
+    num_eval_games = 200  # More games for better ELO resolution
 
     @asynccontextmanager
     async def create_player_factory(model, simulations):
