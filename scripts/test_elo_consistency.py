@@ -52,7 +52,7 @@ def run_test(game: str, run_number: int, log_dir: Path) -> tuple[bool, float | N
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=1800  # 30 minute timeout (Othello with 500 games needs ~20 min)
+            timeout=7200  # 120 minute timeout for extended Othello experiments
         )
 
         # Write log
