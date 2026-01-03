@@ -48,68 +48,114 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     @override
     @torch.inference_mode()
     def evaluate_batch(self, game, states_list, legal_actions_list):
+        """Full evaluation: encode states and run inference."""
+        encoded = self.encode_batch(states_list, legal_actions_list)
+        return self.infer_from_encoded(*encoded)
+    
+    def encode_batch(self, states_list, legal_actions_list) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
+        """
+        Encode states for inference. Can be called on worker side.
+        
+        Returns:
+            x_np: Encoded action histories (B, max_len) int32
+            encoded_len: Length of each encoded history (B,) int32
+            legal_mask: Legal action mask (B, vocab_size) bool
+            legal_indices: List of legal action indices per state
+        """
         B = len(states_list)
-        L = self.block_size
-
-        t0 = time.time()
-        # encode rows
+        
+        # Encode action histories
         encoded_rows = []
         encoded_len = []
-        max_encoded_len = 0
         for state in states_list:
             encoded = self.vocab.encode(state.action_history)
             encoded_rows.append(encoded)
             encoded_len.append(len(encoded))
-        max_encoded_len = max(encoded_len)
-
-        if max_encoded_len > L:
-            raise ValueError(f"max_encoded_len {max_encoded_len} > block_size {L}")
-
-        # Start with zeros to simplify padding.
+        max_encoded_len = max(encoded_len) if encoded_len else 1
+        
+        if max_encoded_len > self.block_size:
+            raise ValueError(f"max_encoded_len {max_encoded_len} > block_size {self.block_size}")
+        
+        # Pad to numpy array
         x_np = np.zeros((B, max_encoded_len), dtype=np.int32)
-        for i, encoded_row in enumerate(encoded_rows):
-            x_np[i, : len(encoded_row)] = encoded_row
+        for i, row in enumerate(encoded_rows):
+            x_np[i, :len(row)] = row
+        
+        encoded_len_np = np.array(encoded_len, dtype=np.int32)
+        
+        # Build legal action mask
+        vocab_size = len(self.vocab.stoi)
+        legal_mask = np.zeros((B, vocab_size), dtype=np.bool_)
+        legal_indices = []
+        for i, legal_actions in enumerate(legal_actions_list):
+            indices = np.array([self.vocab.stoi[a] for a in legal_actions], dtype=np.int32)
+            legal_mask[i, indices] = True
+            legal_indices.append(indices)
+        
+        return x_np, encoded_len_np, legal_mask, legal_indices
+    
+    @torch.inference_mode()
+    def infer_from_encoded(
+        self,
+        x_np: np.ndarray,
+        encoded_len_np: np.ndarray,
+        legal_mask: np.ndarray,
+        legal_indices: list[np.ndarray],
+    ) -> list[NetworkEvaluatorResult]:
+        """
+        Run inference from pre-encoded inputs. Runs on GPU.
+        
+        Args:
+            x_np: Encoded action histories (B, max_len) int32
+            encoded_len_np: Length of each encoded sequence (B,) int32
+            legal_mask: Legal action mask (B, vocab_size) bool
+            legal_indices: List of legal action indices per state
+        
+        Returns:
+            List of NetworkEvaluatorResult
+        """
+        t0 = time.time()
+        B = len(x_np)
+        
+        # Transfer to GPU
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
-
-        # Process model on GPU.
         x_gpu = x_pinned.to(self.device, non_blocking=True)
-        encoded_len_pinned = self._maybe_pin(torch.tensor(encoded_len))
+        
+        encoded_len_pinned = self._maybe_pin(torch.from_numpy(encoded_len_np))
         encoded_len_gpu = encoded_len_pinned.to(self.device, non_blocking=True)
+        
+        # Run model
         (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=encoded_len_gpu)
-
+        
         policy_logits_gpu = policy_logits_gpu.squeeze(1)
         value_logits_gpu = value_logits_gpu.squeeze(1)
-
-        # Calculate legal_policy_mask on CPU
-        legal_policy_mask_np = np.zeros(policy_logits_gpu.shape, dtype=np.bool_)
-        for i, legal_actions in enumerate(legal_actions_list):
-            legal_idx = np.array([self.vocab.stoi[a] for a in legal_actions], dtype=np.int32)
-            legal_policy_mask_np[i, legal_idx] = True
-        legal_policy_mask_pinned = self._maybe_pin(torch.from_numpy(legal_policy_mask_np))
-
-        # Process masked softmax on GPU
+        
+        # Apply legal mask
+        legal_policy_mask_pinned = self._maybe_pin(torch.from_numpy(legal_mask))
         legal_policy_mask_gpu = legal_policy_mask_pinned.to(self.device, non_blocking=True)
         masked_policy_logits_gpu = policy_logits_gpu.masked_fill(~legal_policy_mask_gpu, float("-inf"))
-
-        policy = F.softmax(masked_policy_logits_gpu, dim=-1)  # [B, V]
-        val_probs = F.softmax(value_logits_gpu, dim=-1)  # [B, 3]
+        
+        policy = F.softmax(masked_policy_logits_gpu, dim=-1)
+        val_probs = F.softmax(value_logits_gpu, dim=-1)
         value = val_probs * 2 - 1  # map to [-1, 1]
-
-        # Blocks waiting for GPU to complete.
+        
+        # Transfer back to CPU
         policy_np_batch = policy.cpu().numpy()
         value_np_batch = value.cpu().numpy()
-
-        ret = [None] * len(states_list)
-        for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_policy_mask_np)):
+        
+        # Extract results
+        ret = []
+        for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_mask)):
             legal_policy = policy_np[mask]
-            ret[i] = NetworkEvaluatorResult(legal_policy, value_np)
+            ret.append(NetworkEvaluatorResult(legal_policy, value_np))
+        
         t1 = time.time()
         self.total_time += t1 - t0
-        self.total_evals += len(states_list)
+        self.total_evals += B
         self.total_batches += 1
         if self.verbose and self.total_batches % 1000 == 0:
             print(
-                f"Evaluation time: {t1 - t0:.3f} seconds, size={len(states_list)}, eval-per-second={len(states_list) / (t1 - t0):.2f}, total-batches={self.total_batches}, mean-eval-per-second={self.total_evals / self.total_time:.2f}, mean-time-per-batch={self.total_time / self.total_batches:.3f}, mean-batch-size={self.total_evals / self.total_batches:.2f}"
+                f"Evaluation time: {t1 - t0:.3f} seconds, size={B}, eval-per-second={B / (t1 - t0):.2f}, total-batches={self.total_batches}, mean-eval-per-second={self.total_evals / self.total_time:.2f}, mean-time-per-batch={self.total_time / self.total_batches:.3f}, mean-batch-size={self.total_evals / self.total_batches:.2f}"
             )
         return ret
 

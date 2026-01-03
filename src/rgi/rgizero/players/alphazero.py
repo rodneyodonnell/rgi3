@@ -17,7 +17,7 @@ import asyncio
 from typing import Any, Protocol, Sequence
 
 import numpy as np
-from numba import jit
+from rgi.rgizero.numba_compat import jit
 
 from rgi.rgizero.games.base import Game
 from rgi.rgizero.players.base import Player, TGameState, TAction, ActionResult

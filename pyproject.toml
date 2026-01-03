@@ -9,13 +9,15 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "line-profiler>=5.0.0",
-    "numba>=0.62.0",
     "pytest-asyncio>=1.2.0",
     "ruff>=0.12.12",
     "torch>=2.8.0",
     "tqdm>=4.67.1",
     "wandb>=0.21.3",
 ]
+
+[project.optional-dependencies]
+jit = ["numba>=0.62.0"]  # Not available on free-threaded Python 3.14t
 
 [dependency-groups]
 dev = [
