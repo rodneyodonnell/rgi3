@@ -325,9 +325,10 @@ def main():
     print("=" * 60)
     
     game_name = "othello"
-    num_workers = 4
-    games_per_worker = 100
-    concurrent_per_worker = 2000
+    total_games = 5000
+    num_workers = 11
+    games_per_worker = (total_games // num_workers) + 1
+    concurrent_per_worker = 500
     num_simulations = 30
     port = 50051
     
