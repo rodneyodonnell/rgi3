@@ -79,12 +79,10 @@ class BatchCombiningServicer(inference_pb2_grpc.InferenceServiceServicer):
             except queue.Empty:
                 continue
             
-            while len(pending) < 100:
-                try:
-                    req = self.request_queue.get_nowait()
-                    pending.append(req)
-                except queue.Empty:
-                    break
+            # while len(pending) < 100:
+            while not self.request_queue.empty() and len(pending) < 10000:
+                req = self.request_queue.get()
+                pending.append(req)
             
             total_B = sum(r[0].batch_size for r in pending)
             max_len = max(r[0].max_len for r in pending)
@@ -328,7 +326,7 @@ def main():
     total_games = 5000
     num_workers = 11
     games_per_worker = (total_games // num_workers) + 1
-    concurrent_per_worker = 500
+    concurrent_per_worker = 2000
     num_simulations = 30
     port = 50051
     
