@@ -35,7 +35,7 @@ from rgi.rgizero.players.alphazero import AlphazeroPlayer, play_game_async, Netw
 
 
 class BatchCombiningServicer(inference_pb2_grpc.InferenceServiceServicer):
-    """Same server as before - combines batches from workers."""
+    """gRPC server with pipelined CPU/GPU processing."""
     
     def __init__(self, vocab_size: int, num_players: int, verbose: bool = True):
         self.verbose = verbose
@@ -56,20 +56,33 @@ class BatchCombiningServicer(inference_pb2_grpc.InferenceServiceServicer):
             model=model, device=device, block_size=100, vocab=vocab, verbose=False,
         )
         
+        # Request queue (from gRPC handlers)
         self.request_queue = queue.Queue()
+        # Parsed batch queue (parser → GPU)
+        self.parsed_queue = queue.Queue(maxsize=4)  # Limit to avoid memory blowup
+        
         self.stop_event = threading.Event()
         
         self.total_batches = 0
         self.total_evals = 0
         self.start_time = time.time()
         
-        self.batch_thread = threading.Thread(target=self._batch_processor, daemon=True)
-        self.batch_thread.start()
+        # Timing accumulators
+        self.t_parse = 0.0
+        self.t_gpu = 0.0
+        self.t_response = 0.0
+        
+        # Start pipeline threads
+        self.parser_thread = threading.Thread(target=self._parser_loop, daemon=True)
+        self.gpu_thread = threading.Thread(target=self._gpu_loop, daemon=True)
+        self.parser_thread.start()
+        self.gpu_thread.start()
         
         if verbose:
-            print(f"gRPC server ready on {device}")
+            print(f"gRPC server ready on {device} (pipelined)")
     
-    def _batch_processor(self):
+    def _parser_loop(self):
+        """Collects requests and prepares numpy arrays for GPU."""
         while not self.stop_event.is_set():
             pending = []
             
@@ -79,14 +92,17 @@ class BatchCombiningServicer(inference_pb2_grpc.InferenceServiceServicer):
             except queue.Empty:
                 continue
             
-            # while len(pending) < 100:
+            # Grab all available
             while not self.request_queue.empty() and len(pending) < 10000:
                 req = self.request_queue.get()
                 pending.append(req)
             
+            t0 = time.perf_counter()
+            
             total_B = sum(r[0].batch_size for r in pending)
             max_len = max(r[0].max_len for r in pending)
             
+            # Pre-allocate combined arrays
             x_combined = np.zeros((total_B, max_len), dtype=np.int32)
             len_combined = np.zeros(total_B, dtype=np.int32)
             mask_combined = np.zeros((total_B, self.vocab_size), dtype=np.bool_)
@@ -97,44 +113,76 @@ class BatchCombiningServicer(inference_pb2_grpc.InferenceServiceServicer):
                 B = request.batch_size
                 req_max_len = request.max_len
                 
-                x_req = np.array(request.x_data, dtype=np.int32).reshape(B, req_max_len)
+                # Zero-copy: use np.frombuffer on bytes
+                x_req = np.frombuffer(request.x_data_bytes, dtype=np.int32).reshape(B, req_max_len)
                 x_combined[idx:idx+B, :req_max_len] = x_req
-                len_combined[idx:idx+B] = request.encoded_lengths
+                len_combined[idx:idx+B] = np.frombuffer(request.encoded_lengths_bytes, dtype=np.int32)
                 
-                mask_req = np.array(request.legal_mask, dtype=np.bool_).reshape(B, self.vocab_size)
+                mask_req = np.frombuffer(request.legal_mask_bytes, dtype=np.bool_).reshape(B, self.vocab_size)
                 mask_combined[idx:idx+B] = mask_req
                 
                 bounds.append((idx, B, request, event, response_holder))
                 idx += B
             
             legal_indices = [np.where(mask_combined[i])[0] for i in range(total_B)]
+            
+            t1 = time.perf_counter()
+            self.t_parse += t1 - t0
+            
+            # Put parsed batch on GPU queue
+            parsed_batch = (x_combined, len_combined, mask_combined, legal_indices, bounds, total_B)
+            self.parsed_queue.put(parsed_batch)
+    
+    def _gpu_loop(self):
+        """Runs GPU inference on parsed batches."""
+        while not self.stop_event.is_set():
+            try:
+                parsed_batch = self.parsed_queue.get(timeout=0.01)
+            except queue.Empty:
+                continue
+            
+            x_combined, len_combined, mask_combined, legal_indices, bounds, total_B = parsed_batch
+            
+            t0 = time.perf_counter()
             results = self.evaluator.infer_from_encoded(
                 x_combined, len_combined, mask_combined, legal_indices
             )
+            t1 = time.perf_counter()
+            self.t_gpu += t1 - t0
             
+            # Build responses with bytes for zero-copy
             for start_idx, count, request, event, response_holder in bounds:
                 worker_results = results[start_idx:start_idx+count]
+                
+                # Concatenate all policies and values
+                all_policies = np.concatenate([r.legal_policy for r in worker_results]).astype(np.float32)
+                all_values = np.concatenate([r.player_values for r in worker_results]).astype(np.float32)
                 
                 response = inference_pb2.EncodedEvalResponse(
                     worker_id=request.worker_id,
                     request_id=request.request_id,
                     num_players=self.num_players,
+                    legal_policies_bytes=all_policies.tobytes(),
+                    player_values_bytes=all_values.tobytes(),
+                    total_legal_actions=len(all_policies),
                 )
-                
-                for result in worker_results:
-                    response.legal_policies.extend(result.legal_policy.tolist())
-                    response.player_values.extend(result.player_values.tolist())
                 
                 response_holder['response'] = response
                 event.set()
+            
+            t2 = time.perf_counter()
+            self.t_response += t2 - t1
             
             self.total_batches += 1
             self.total_evals += total_B
             
             if self.verbose and self.total_batches % 50 == 0:
                 elapsed = time.time() - self.start_time
+                total_time = self.t_parse + self.t_gpu + self.t_response
                 print(f"Server: batches={self.total_batches}, evals={self.total_evals}, "
                       f"combined={total_B}, evals/sec={self.total_evals/elapsed:.0f}")
+                print(f"  Timing: parse={100*self.t_parse/total_time:.0f}%, "
+                      f"GPU={100*self.t_gpu/total_time:.0f}%, response={100*self.t_response/total_time:.0f}%")
     
     def EvaluateEncoded(self, request, context):
         event = threading.Event()
@@ -145,7 +193,8 @@ class BatchCombiningServicer(inference_pb2_grpc.InferenceServiceServicer):
     
     def stop(self):
         self.stop_event.set()
-        self.batch_thread.join(timeout=2)
+        self.parser_thread.join(timeout=2)
+        self.gpu_thread.join(timeout=2)
 
 
 def run_server(vocab_size: int, num_players: int, port: int, 
@@ -244,20 +293,20 @@ def worker_process(worker_id: int, game_name: str, vocab_tokens: list,
                         legal_mask[i, indices] = True
                         num_legal_actions.append(len(legal_actions))
                     
-                    # Build request
+                    # Build request with bytes for zero-copy
+                    num_legal_np = np.array(num_legal_actions, dtype=np.int32)
                     request = inference_pb2.EncodedEvalRequest(
                         worker_id=worker_id,
                         request_id=self.request_id,
                         batch_size=B,
                         max_len=max_len,
                         vocab_size=vocab_size,
+                        x_data_bytes=x_np.tobytes(),
+                        encoded_lengths_bytes=encoded_len_np.tobytes(),
+                        legal_mask_bytes=legal_mask.tobytes(),
+                        num_legal_actions_bytes=num_legal_np.tobytes(),
                     )
                     self.request_id += 1
-                    
-                    request.x_data.extend(x_np.flatten().tolist())
-                    request.encoded_lengths.extend(encoded_len_np.tolist())
-                    request.legal_mask.extend(legal_mask.flatten().tolist())
-                    request.num_legal_actions.extend(num_legal_actions)
                     
                     self.batch_count += 1
                     if self.batch_count % 100 == 0:
@@ -266,15 +315,18 @@ def worker_process(worker_id: int, game_name: str, vocab_tokens: list,
                     # Async gRPC call - yields control!
                     response = await stub.EvaluateEncoded(request)
                     
-                    # Set results
+                    # Set results from bytes
                     num_players = response.num_players
+                    all_policies = np.frombuffer(response.legal_policies_bytes, dtype=np.float32)
+                    all_values = np.frombuffer(response.player_values_bytes, dtype=np.float32)
+                    
                     policy_offset = 0
                     value_offset = 0
                     
                     for i, future in enumerate(futures):
                         n_legal = num_legal_actions[i]
-                        legal_policy = np.array(response.legal_policies[policy_offset:policy_offset+n_legal])
-                        player_values = np.array(response.player_values[value_offset:value_offset+num_players])
+                        legal_policy = all_policies[policy_offset:policy_offset+n_legal]
+                        player_values = all_values[value_offset:value_offset+num_players]
                         
                         policy_offset += n_legal
                         value_offset += num_players
