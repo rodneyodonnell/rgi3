@@ -1,10 +1,11 @@
 import os
 import json
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 import time
+import tempfile
 
 import torch
 import numpy as np
@@ -12,7 +13,7 @@ import numpy as np
 from rgi.rgizero.games import game_registry
 from rgi.rgizero.models.transformer import TransformerConfig
 from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
-from rgi.rgizero.models.tuner import create_random_model, train_model
+from rgi.rgizero.models.tuner import create_random_model
 from rgi.rgizero.train import TrainConfig
 from rgi.rgizero.data.trajectory_dataset import TrajectoryDatasetBuilder, Vocab, build_trajectory_loader
 from rgi.rgizero.common import TOKENS
@@ -40,6 +41,7 @@ class ExperimentConfig:
     # gradient_accumulation_steps: int = 1
     seed: int = 42
     training_window_size: Optional[int] = 10
+    use_grpc: bool = False  # Use gRPC inference servers for self-play
 
     def to_json(self):
         return dataclasses.asdict(self)
@@ -255,6 +257,21 @@ class ExperimentRunner:
         """Run self-play and save trajectory dataset."""
         start_time = time.time()
 
+        if self.config.use_grpc:
+            results = await self._play_generation_grpc(model, gen_id)
+        else:
+            results = await self._play_generation_local(model, gen_id)
+
+        elapsed = time.time() - start_time
+        print(f"Self-play completed in {elapsed:.1f}s ({len(results)} games, {elapsed/len(results):.2f}s/game)")
+
+        # Write Dataset
+        if write_dataset:
+            print(f"Writing {len(results)} trajectories...")
+            self._write_dataset(results, gen_id)
+
+    async def _play_generation_local(self, model, gen_id):
+        """Run self-play with in-process AsyncNetworkEvaluator."""
         # Setup Evaluator
         serial_evaluator = ActionHistoryTransformerEvaluator(
             model, device=self.device, block_size=self.n_max_context, vocab=self.action_vocab
@@ -262,7 +279,6 @@ class ExperimentRunner:
         async_evaluator = AsyncNetworkEvaluator(base_evaluator=serial_evaluator, max_batch_size=1024, verbose=False)
 
         # Player Factory
-        # We need a closure to act as the factory for play_game_async loop
         master_rng = np.random.default_rng(self.config.seed + gen_id)
 
         def player_factory():
@@ -272,7 +288,7 @@ class ExperimentRunner:
                 self.game,
                 async_evaluator,
                 rng=rng,
-                add_noise=True,  # Exploration noise!
+                add_noise=True,
                 simulations=self.config.num_simulations,
             )
 
@@ -283,13 +299,96 @@ class ExperimentRunner:
         finally:
             await async_evaluator.stop()
 
-        elapsed = time.time() - start_time
-        print(f"Self-play completed in {elapsed:.1f}s ({len(results)} games, {elapsed/len(results):.2f}s/game)")
+        return results
 
-        # Write Dataset
-        if write_dataset:
-            print(f"Writing {len(results)} trajectories...")
-            self._write_dataset(results, gen_id)
+    async def _play_generation_grpc(self, model, gen_id):
+        """Run self-play with gRPC inference server and multiple worker processes.
+        
+        Spawns a dedicated inference server process and multiple worker processes,
+        each with their own gRPC client. This maximizes GPU utilization by having
+        multiple CPU processes feed requests to the GPU.
+        """
+        import multiprocessing as mp
+        from rgi.rgizero.serving.selfplay_worker import run_selfplay_worker
+        from rgi.rgizero.serving.inference_server import run_server_process
+
+        # Configuration
+        num_workers = min(8, mp.cpu_count())  # Use up to 8 workers
+        games_per_worker = self.config.num_games_per_gen // num_workers
+        remainder = self.config.num_games_per_gen % num_workers
+        concurrent_games_per_worker = 200  # Each worker runs 200 concurrent games
+
+        # Save model to temp file for server
+        model_path = tempfile.mktemp(suffix=f"_gen{gen_id}.pt")
+        torch.save({'model': model}, model_path)
+
+        # Start inference server in subprocess
+        port = 50051 + gen_id  # Different port per generation
+        ready_event = mp.Event()
+        stop_event = mp.Event()
+
+        server_process = mp.Process(
+            target=run_server_process,
+            args=(model_path, self.config.game_name, port, ready_event, stop_event, False),
+        )
+        server_process.start()
+
+        # Wait for server to be ready
+        if not ready_event.wait(timeout=30):
+            server_process.terminate()
+            raise RuntimeError("gRPC server failed to start")
+
+        try:
+            # Start worker processes
+            result_queue = mp.Queue()
+            workers = []
+            vocab_tokens = self.action_vocab.itos  # Pass vocab as list of tokens
+            master_rng = np.random.default_rng(self.config.seed + gen_id)
+
+            for worker_id in range(num_workers):
+                # Distribute games evenly (+1 for first 'remainder' workers)
+                worker_games = games_per_worker + (1 if worker_id < remainder else 0)
+                if worker_games == 0:
+                    continue
+
+                worker_seed = master_rng.integers(0, 2**31)
+                p = mp.Process(
+                    target=run_selfplay_worker,
+                    args=(
+                        worker_id,
+                        self.config.game_name,
+                        vocab_tokens,
+                        worker_games,
+                        concurrent_games_per_worker,
+                        self.config.num_simulations,
+                        port,
+                        worker_seed,
+                        result_queue,
+                    ),
+                )
+                p.start()
+                workers.append(p)
+
+            # Collect results from all workers
+            all_results = []
+            for _ in workers:
+                worker_id, results = result_queue.get()
+                all_results.extend(results)
+
+            # Wait for workers to finish
+            for p in workers:
+                p.join(timeout=10)
+                if p.is_alive():
+                    p.terminate()
+
+        finally:
+            stop_event.set()
+            server_process.join(timeout=5)
+            if server_process.is_alive():
+                server_process.terminate()
+            Path(model_path).unlink(missing_ok=True)
+
+        return all_results
 
     async def _play_games_async(self, player_factory):
         """Helper to run games in parallel."""

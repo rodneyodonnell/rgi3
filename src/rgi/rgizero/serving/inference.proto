@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package inference;
+
+// Request with pre-encoded tensors - using bytes for faster numpy transfer
+message EncodedEvalRequest {
+    int32 worker_id = 1;
+    int32 request_id = 2;
+    
+    // Binary numpy data - much faster than repeated int32
+    bytes x_data_bytes = 10;  // np.int32.tobytes()
+    int32 batch_size = 4;
+    int32 max_len = 5;
+    
+    bytes encoded_lengths_bytes = 11;  // np.int32.tobytes()
+    
+    bytes legal_mask_bytes = 12;  // np.bool_.tobytes()
+    int32 vocab_size = 8;
+    
+    bytes num_legal_actions_bytes = 13;  // np.int32.tobytes()
+}
+
+// Response with results
+message EncodedEvalResponse {
+    int32 worker_id = 1;
+    int32 request_id = 2;
+    
+    // Binary numpy data
+    bytes legal_policies_bytes = 10;  // np.float32.tobytes()
+    bytes player_values_bytes = 11;  // np.float32.tobytes()
+    int32 num_players = 5;
+    int32 total_legal_actions = 6;  // Sum of legal actions for unpacking
+}
+
+// The inference service
+service InferenceService {
+    // Unary RPC
+    rpc EvaluateEncoded(EncodedEvalRequest) returns (EncodedEvalResponse);
+    
+    // Bidirectional streaming
+    rpc EvaluateStream(stream EncodedEvalRequest) returns (stream EncodedEvalResponse);
+}
