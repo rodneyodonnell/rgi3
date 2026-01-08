@@ -330,6 +330,7 @@ class ExperimentRunner:
         server_process = mp.Process(
             target=run_server_process,
             args=(model_path, self.config.game_name, port, ready_event, stop_event, False),
+            daemon=True,  # Auto-kill if parent dies
         )
         server_process.start()
 
@@ -365,6 +366,7 @@ class ExperimentRunner:
                         worker_seed,
                         result_queue,
                     ),
+                    daemon=True,  # Auto-kill workers if parent dies
                 )
                 p.start()
                 workers.append(p)
