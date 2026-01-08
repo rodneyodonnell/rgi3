@@ -40,15 +40,8 @@ def run_selfplay_worker(
         seed: Random seed for this worker
         result_queue: Queue to put results
     """
-    # Import proto stubs - must be done in worker process
-    import sys
-    from pathlib import Path
-    # Add serving module to path if needed
-    serving_path = Path(__file__).parent
-    if str(serving_path) not in sys.path:
-        sys.path.insert(0, str(serving_path))
-    
-    from . import inference_pb2, inference_pb2_grpc
+    # Import proto stubs - must use absolute import for multiprocessing
+    from rgi.rgizero.serving import inference_pb2, inference_pb2_grpc
     
     game = game_registry.create_game(game_name)
     vocab = Vocab(itos=vocab_tokens)
