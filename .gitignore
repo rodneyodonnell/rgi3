@@ -23,6 +23,11 @@ uv.lock.backup
 # Ignore scratch notebooks
 notebooks/scratch/
 
+# node
+node_modules/
+web_app/static/*.js
+!web_app/static/styles.css # Keep styles if it is manual source
+
 # emacs shrapnel
 *~
 .#*

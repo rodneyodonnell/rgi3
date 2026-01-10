@@ -68,5 +68,25 @@ uv run pytest tests/rgizero/test_integration.py::test_full_training_pipeline_cou
 **Note on ELO variance**: With small test datasets (80 games/gen), ELO results can vary between runs. The `test_model_predictions` test is more reliable for validating that training works correctly.
 
 
+## Web Application
+
+The project includes a web interface for playing games.
+The frontend is written in TypeScript and needs to be compiled.
+
+### Setup & Run
+Use the provided script to compile the frontend and start the server:
+
+```bash
+./scripts/start_web_app.sh
+```
+
+This script will:
+1. Install Node.js dependencies (if needed).
+2. Compile TypeScript files to `web_app/static/`.
+3. Start the FastAPI server with hot-reload enabled.
+
+You can access the game portal at [http://localhost:8000](http://localhost:8000).
+To start a new Connect4 game directly: [http://localhost:8000/connect4/new](http://localhost:8000/connect4/new)
+
 # nanoGPT.fork
 **nanoGPT.fork** is a fork & wrapper for nanoGPT to make it easier to call from other tools.

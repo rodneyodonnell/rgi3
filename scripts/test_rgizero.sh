@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run rgizero tests, excluding slow integration tests by default
+# Run rgizero and web_app tests
 #
 # Usage:
 #   ./scripts/test_rgizero.sh               # Run fast unit tests only
@@ -8,10 +8,10 @@
 set -e
 
 if [ "$1" = "--with-integration" ]; then
-    echo "Running all rgizero tests (including integration tests)..."
-    uv run pytest tests/rgizero
+    echo "Running all tests (including integration)..."
+    uv run pytest tests/rgizero tests/web_app
 else
-    echo "Running fast rgizero tests (excluding integration tests)..."
+    echo "Running fast tests (excluding integration)..."
     echo "Use --with-integration to include integration tests."
-    uv run pytest tests/rgizero -m "not integration"
+    uv run pytest tests/rgizero tests/web_app -m "not integration"
 fi
