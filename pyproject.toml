@@ -18,6 +18,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "uvicorn>=0.40.0",
     "wandb>=0.21.3",
+    "grpcio>=1.70.0",
+    "grpcio-tools>=1.70.0",
 ]
 
 [project.optional-dependencies]
