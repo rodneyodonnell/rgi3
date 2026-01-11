@@ -185,9 +185,8 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                      
                     players[player_id] = AlphazeroPlayer(
                          game=game, 
-                         player_id=player_id, 
                          evaluator=evaluator, 
-                         num_simulations=sims
+                         simulations=sims
                     )
                     continue # Skip the registry instantiation below
                 except Exception as e:
