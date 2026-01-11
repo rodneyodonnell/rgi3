@@ -16,6 +16,7 @@ from concurrent import futures
 
 from rgi.rgizero.serving import inference_pb2, inference_pb2_grpc
 from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator
+from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer, TransformerConfig
 
 
 class InferenceServicer(inference_pb2_grpc.InferenceServiceServicer):
@@ -237,7 +238,30 @@ def run_server_process(
     
     # Load model from checkpoint
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
-    model = checkpoint['model'] if 'model' in checkpoint else checkpoint
+    
+    if isinstance(checkpoint, dict) and "model_config" in checkpoint:
+        # Re-instantiate from config and state dict
+        config = TransformerConfig(**checkpoint["model_config"])
+        model = ActionHistoryTransformer(
+            config=config,
+            action_vocab_size=vocab.vocab_size,
+            num_players=num_players
+        )
+        if "model" in checkpoint:
+            model.load_state_dict(checkpoint["model"])
+        else:
+            # Fallback if just config provided (unlikely) or flat dict
+            try:
+                model.load_state_dict(checkpoint)
+            except Exception:
+                pass
+    elif isinstance(checkpoint, dict) and "model" in checkpoint:
+        # Maybe model object is inside 'model' key (legacy?)
+        model = checkpoint["model"]
+    else:
+        # Assume it's the model object itself
+        model = checkpoint
+        
     model = model.to(device)
     model.eval()
     
