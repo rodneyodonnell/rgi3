@@ -19,10 +19,12 @@ from rgi.rgizero.players.human_player import HumanPlayer
 from rgi.rgizero.players.random_player import RandomPlayer
 from rgi.rgizero.players.minimax_player import MinimaxPlayer
 from rgi.rgizero.players.alphazero import AlphazeroPlayer
+from rgi.rgizero.evaluators import UniformEvaluator
 from rgi.rgizero.serving.server_manager import ModelServerManager
 from rgi.rgizero.serving.grpc_evaluator import GrpcEvaluator
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.common import TOKENS
+from pathlib import Path
 
 print("Server restarted at", datetime.now())
 
@@ -97,6 +99,23 @@ async def root(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request=request, name="index.html", context={"request": request})
 
 
+@app.get("/api/models")
+async def list_models() -> dict[str, list[str]]:
+    """List available model files from experiments directory."""
+    models: list[str] = []
+    experiments_dir = Path("experiments")
+    if experiments_dir.exists():
+        for pt_file in experiments_dir.rglob("*.pt"):
+            # Only include final generation models (gen-N.pt, not ckpt.pt or best.pt in subdirs)
+            if pt_file.name.startswith("gen-") and pt_file.name.endswith(".pt"):
+                # Avoid duplicates from subdirectories
+                if pt_file.parent.name == "models":
+                    models.append(str(pt_file))
+    # Sort by path for consistent ordering
+    models.sort()
+    return {"models": models}
+
+
 @app.post("/games/new")
 async def create_new_game(request: Request) -> dict[str, Any]:
     data = await request.json()
@@ -123,45 +142,36 @@ async def create_new_game(request: Request) -> dict[str, Any]:
     players: dict[int, Player[Any, Any]] = {}
     for player_id, options in player_options.items():
         p_type = options.get("player_type", "human")
-        
-        # Allow custom types that map to existing classes
-        if p_type == "zerozero_best":
-            player_cls = AlphazeroPlayer # Placeholder, handled specifically below
-        elif p_type not in WEB_PLAYER_REGISTRY:
-            logger.warning(f"Unknown player type '{p_type}', defaulting to human")
-            p_type = "human"
-            player_cls = WEB_PLAYER_REGISTRY[p_type]
-        else:
-            player_cls = WEB_PLAYER_REGISTRY[p_type]
-        # Some players might need args, handling basics here
-        # Note: rgi3-4 players __init__ vary, need to unify or handle specific cases
-        # For now assuming simple initialization or kwargs
         constructor_options = {k: v for k, v in options.items() if k != "player_type"}
-        try:
-            # Check if constructor expects 'game', 'player_id', 'evaluator'
-            import inspect
-
-            sig = inspect.signature(player_cls.__init__)
-            call_args = constructor_options.copy()
-
-            if "game" in sig.parameters:
-                call_args["game"] = game
-            if "player_id" in sig.parameters:
-                call_args["player_id"] = player_id
-
-            # Handle ZeroZero Best (AlphaZero with trained model)
-            if p_type == "zerozero_best":
-                # Hardcoded path to best model from overnight experiments
-                model_path = "experiments/overnight_2026_01_08/06_combined/06_combined/models/gen-4.pt"
-                logger.info(f"Setting up AlphaZero Best with model: {model_path}")
+        
+        # Handle AlphaZero variants specially
+        if p_type in ("zerozero", "zerozero_best", "alphazero_custom"):
+            sims = constructor_options.get("simulations", 50)  # Default 50 for fast play
+            
+            if p_type == "zerozero":
+                # Untrained: use uniform evaluator (no model needed)
+                num_players = game.num_players(state)
+                evaluator = UniformEvaluator(num_players=num_players)
+                logger.info(f"Setting up ZeroZero (Untrained) with uniform evaluator, {sims} simulations")
+                players[player_id] = AlphazeroPlayer(game=game, evaluator=evaluator, simulations=sims)
+                
+            elif p_type in ("zerozero_best", "alphazero_custom"):
+                # Get model path
+                if p_type == "zerozero_best":
+                    model_path = "experiments/overnight_2026_01_08/06_combined/06_combined/models/gen-4.pt"
+                else:
+                    model_path = constructor_options.get("model_path", "")
+                    if not model_path:
+                        raise HTTPException(status_code=400, detail="alphazero_custom requires model_path")
+                
+                logger.info(f"Setting up AlphaZero with model: {model_path}, {sims} simulations")
                 
                 # Get/Start gRPC server
                 try:
                     port = server_manager.get_port(model_path)
-                    logger.info(f"Model servier running on port {port}")
+                    logger.info(f"Model server running on port {port}")
                     
                     # Create Vocab for encoder
-                    # Assuming 'game' handles history tracking and has base_game
                     base_game_ref = game.base_game if hasattr(game, "base_game") else game
                     vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(base_game_ref.all_actions()))
 
@@ -174,41 +184,35 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                     )
                     await evaluator.connect()
                     
-                    # We need to manually initialize the player because p_type was 'zerozero_best' but class handles 'zerozero' logic if args provided
-                    # Actually p_type 'zerozero_best' isn't in registry?
-                    # We should map 'zerozero_best' to AlphazeroPlayer in the loop or handle it here.
-                    
-                    # Initialize AlphaZeroPlayer with this evaluator
-                    # AlphazeroPlayer(game, evaluator, simulations=...)
-                    # We use default simulations or what's in options
-                    sims = constructor_options.get("simulations", 50) # Default 50 for fast play
-                     
-                    players[player_id] = AlphazeroPlayer(
-                         game=game, 
-                         evaluator=evaluator, 
-                         simulations=sims
-                    )
-                    continue # Skip the registry instantiation below
+                    players[player_id] = AlphazeroPlayer(game=game, evaluator=evaluator, simulations=sims)
                 except Exception as e:
                     logger.error(f"Failed to start model server: {e}")
                     raise HTTPException(status_code=500, detail=f"Failed to load AI model: {e}")
+            continue
+        
+        # Handle other player types via registry
+        if p_type not in WEB_PLAYER_REGISTRY:
+            logger.warning(f"Unknown player type '{p_type}', defaulting to human")
+            p_type = "human"
+        
+        player_cls = WEB_PLAYER_REGISTRY[p_type]
+        try:
+            import inspect
+            sig = inspect.signature(player_cls.__init__)
+            call_args = constructor_options.copy()
 
-            # Special handling for AlphaZero where evaluator is complex/missing
-            if "evaluator" in sig.parameters and "evaluator" not in call_args:
-                raise ValueError(f"Player type '{p_type}' requires an 'evaluator' (NetworkEvaluator).")
+            if "game" in sig.parameters:
+                call_args["game"] = game
+            if "player_id" in sig.parameters:
+                call_args["player_id"] = player_id
 
             players[player_id] = player_cls(**call_args)
         except (TypeError, ValueError) as e:
             logger.error(f"Failed to initialize player {player_id} ({p_type}): {e}")
-            if "evaluator" in str(e):
-                # Fail gracefully for AlphaZero as requested
-                raise HTTPException(status_code=400, detail=str(e))
-
-            # Fallback if args don't match, mostly for simple players or empty init
+            # Fallback for simple players
             try:
                 players[player_id] = player_cls()
             except Exception:
-                # If fallback fails, raise info about original failure
                 raise HTTPException(status_code=500, detail=f"Failed to initialize '{p_type}': {e}")
 
     logger.debug("Players initialized: %s", {pid: type(p).__name__ for pid, p in players.items()})

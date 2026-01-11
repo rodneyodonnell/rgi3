@@ -20,6 +20,25 @@ from rgi.rgizero.players.alphazero import NetworkEvaluator, NetworkEvaluatorResu
 from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
 
 
+class UniformEvaluator(NetworkEvaluator):
+    """Simple evaluator that returns uniform policy and neutral values.
+    
+    Useful for testing MCTS without a trained model, or as a baseline.
+    """
+    
+    def __init__(self, num_players: int = 2):
+        self.num_players = num_players
+    
+    def evaluate(self, game, state, legal_actions) -> NetworkEvaluatorResult:
+        n = len(legal_actions)
+        uniform_policy = np.ones(n, dtype=np.float32) / n
+        neutral_values = np.ones(self.num_players, dtype=np.float32) / self.num_players
+        return NetworkEvaluatorResult(uniform_policy, neutral_values)
+    
+    async def evaluate_async(self, game, state, legal_actions) -> NetworkEvaluatorResult:
+        return self.evaluate(game, state, legal_actions)
+
+
 class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     """Neural network evaluator for MCTS."""
 
