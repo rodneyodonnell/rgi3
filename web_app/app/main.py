@@ -36,6 +36,9 @@ app = FastAPI()
 templates = Jinja2Templates(directory="web_app/templates")
 app.mount("/static", StaticFiles(directory="web_app/static"), name="static")
 
+# Configuration flags
+VERBOSE_AI_LOGGING = True  # Set to False to disable AI score logging during games
+
 # Initialize Server Manager
 server_manager = ModelServerManager(game_name="othello")
 
@@ -262,20 +265,23 @@ async def get_game_state(game_id: int) -> dict[str, Any]:
         response_data["state"] = base_state["board"]
         response_data["current_player"] = base_state.get("current_player")
         response_data["is_terminal"] = base_state.get("is_terminal")
-        response_data["winner"] = base_state.get("winner")
+        response_data["winner"] = base_state.get("winner")  # May be None
     else:
         # Fallback or generic state
         response_data["state"] = serialized_state
         response_data["current_player"] = game.current_player_id(state)
         response_data["is_terminal"] = game.is_terminal(state)
-        # Winner calculation if not present
-        if game.is_terminal(state) and "winner" not in response_data:
-            winner = None
-            for pid in game.player_ids(state):
-                if game.reward(state, pid) == 1.0:
-                    winner = pid
-                    break
-            response_data["winner"] = winner
+        response_data["winner"] = None
+    
+    # Calculate winner from reward() if game is terminal but winner not in state
+    # (Othello doesn't have a winner field in state, it's computed from piece counts)
+    if game.is_terminal(state) and response_data.get("winner") is None:
+        winner = None
+        for pid in game.player_ids(state):
+            if game.reward(state, pid) == 1.0:
+                winner = pid
+                break
+        response_data["winner"] = winner
 
     # Add Dimensions (Frontend expects 'rows' and 'columns')
     # Unwrap game to find base game with dimensions if needed
@@ -378,6 +384,21 @@ async def make_ai_move(game_id: int) -> dict[str, Any]:
 
         new_state = game.next_state(state, action)
         game_session["state"] = new_state
+        
+        # Log predicted scores if verbose logging is enabled
+        if VERBOSE_AI_LOGGING and "current_player_mean_values" in result.info:
+            mean_values = result.info["current_player_mean_values"]
+            legal_actions = result.info.get("legal_actions", [])
+            visit_counts = result.info.get("legal_action_visit_counts", [])
+            # Find index of chosen action
+            action_idx = legal_actions.index(action) if action in legal_actions else -1
+            chosen_value = mean_values[action_idx] if action_idx >= 0 else None
+            logger.info(
+                "AI Player %d predicted scores: action=%s value=%.3f, best_value=%.3f, visit_counts=%s",
+                current_player_id, action, chosen_value or 0, max(mean_values) if len(mean_values) > 0 else 0,
+                visit_counts.tolist() if hasattr(visit_counts, 'tolist') else visit_counts
+            )
+        
         logger.info("AI move made for player %d. Action: %s", current_player_id, action)
         return {"success": True}
     except Exception as e:
