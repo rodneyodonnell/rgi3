@@ -150,13 +150,14 @@ async def create_new_game(request: Request) -> dict[str, Any]:
         # Handle AlphaZero variants specially
         if p_type in ("zerozero", "zerozero_best", "alphazero_custom"):
             sims = constructor_options.get("simulations", 50)  # Default 50 for fast play
+            temp = constructor_options.get("temperature", 0.0)  # Default 0.0 (greedy)
             
             if p_type == "zerozero":
                 # Untrained: use uniform evaluator (no model needed)
                 num_players = game.num_players(state)
                 evaluator = UniformEvaluator(num_players=num_players)
-                logger.info(f"Setting up ZeroZero (Untrained) with uniform evaluator, {sims} simulations")
-                players[player_id] = AlphazeroPlayer(game=game, evaluator=evaluator, simulations=sims)
+                logger.info(f"Setting up ZeroZero (Untrained) with uniform evaluator, {sims} simulations, temp={temp}")
+                players[player_id] = AlphazeroPlayer(game=game, evaluator=evaluator, simulations=sims, temperature=temp)
                 
             elif p_type in ("zerozero_best", "alphazero_custom"):
                 # Get model path
@@ -167,7 +168,7 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                     if not model_path:
                         raise HTTPException(status_code=400, detail="alphazero_custom requires model_path")
                 
-                logger.info(f"Setting up AlphaZero with model: {model_path}, {sims} simulations")
+                logger.info(f"Setting up AlphaZero with model: {model_path}, {sims} simulations, temp={temp}")
                 
                 # Get/Start gRPC server
                 try:
@@ -187,7 +188,9 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                     )
                     await evaluator.connect()
                     
-                    players[player_id] = AlphazeroPlayer(game=game, evaluator=evaluator, simulations=sims)
+                    players[player_id] = AlphazeroPlayer(
+                        game=game, evaluator=evaluator, simulations=sims, temperature=temp
+                    )
                 except Exception as e:
                     logger.error(f"Failed to start model server: {e}")
                     raise HTTPException(status_code=500, detail=f"Failed to load AI model: {e}")

@@ -85,6 +85,11 @@ function getPlayerOptions(game: string, playerNum: number): { player_type: strin
         options.model_path = modelSelect.value
       }
     }
+
+    const tempSlider = document.getElementById(`${game}Player${playerNum}Temp`) as HTMLInputElement
+    if (tempSlider) {
+      options.temperature = parseFloat(tempSlider.value)
+    }
   }
 
   return options

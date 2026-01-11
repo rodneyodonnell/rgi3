@@ -17,7 +17,8 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="connect4Player1" class="form-label">Player 1:</label>
-                            <select class="form-select player-select" id="connect4Player1" name="player1Type" data-game="connect4" data-player="1">
+                            <select class="form-select player-select" id="connect4Player1" name="player1Type"
+                                data-game="connect4" data-player="1">
                                 <option value="human">Human</option>
                                 <option value="random">Random</option>
                                 <option value="minimax">Minimax</option>
@@ -27,7 +28,8 @@
                         </div>
                         <div class="col-md-6">
                             <label for="connect4Player2" class="form-label">Player 2:</label>
-                            <select class="form-select player-select" id="connect4Player2" name="player2Type" data-game="connect4" data-player="2">
+                            <select class="form-select player-select" id="connect4Player2" name="player2Type"
+                                data-game="connect4" data-player="2">
                                 <option value="human">Human</option>
                                 <option value="random">Random</option>
                                 <option value="minimax">Minimax</option>
@@ -42,14 +44,23 @@
                             <div class="card-body">
                                 <h6>Player 1 AI Options</h6>
                                 <div class="mb-2">
-                                    <label for="connect4Player1Sims" class="form-label">Simulations: <span id="connect4Player1SimsValue">50</span></label>
-                                    <input type="range" class="form-range" id="connect4Player1Sims" min="10" max="500" value="50">
+                                    <label for="connect4Player1Sims" class="form-label">Simulations: <span
+                                            id="connect4Player1SimsValue">50</span></label>
+                                    <input type="range" class="form-range" id="connect4Player1Sims" min="10" max="500"
+                                        value="50">
                                 </div>
                                 <div class="mb-2">
                                     <label for="connect4Player1Model" class="form-label">Model:</label>
                                     <select class="form-select model-select" id="connect4Player1Model">
                                         <option value="">-- Select Model --</option>
                                     </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="connect4Player1Temp" class="form-label">Temperature: <span
+                                            id="connect4Player1TempValue">0.0</span></label>
+                                    <input type="range" class="form-range" id="connect4Player1Temp" min="0.0" max="2.0"
+                                        step="0.1" value="0.0">
+                                    <div class="form-text">0.0 = Best move (Greedy), >0.0 = Varied/Stochastic</div>
                                 </div>
                             </div>
                         </div>
@@ -60,14 +71,23 @@
                             <div class="card-body">
                                 <h6>Player 2 AI Options</h6>
                                 <div class="mb-2">
-                                    <label for="connect4Player2Sims" class="form-label">Simulations: <span id="connect4Player2SimsValue">50</span></label>
-                                    <input type="range" class="form-range" id="connect4Player2Sims" min="10" max="500" value="50">
+                                    <label for="connect4Player2Sims" class="form-label">Simulations: <span
+                                            id="connect4Player2SimsValue">50</span></label>
+                                    <input type="range" class="form-range" id="connect4Player2Sims" min="10" max="500"
+                                        value="50">
                                 </div>
                                 <div class="mb-2">
                                     <label for="connect4Player2Model" class="form-label">Model:</label>
                                     <select class="form-select model-select" id="connect4Player2Model">
                                         <option value="">-- Select Model --</option>
                                     </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="connect4Player2Temp" class="form-label">Temperature: <span
+                                            id="connect4Player2TempValue">0.0</span></label>
+                                    <input type="range" class="form-range" id="connect4Player2Temp" min="0.0" max="2.0"
+                                        step="0.1" value="0.0">
+                                    <div class="form-text">0.0 = Best move (Greedy), >0.0 = Varied/Stochastic</div>
                                 </div>
                             </div>
                         </div>
@@ -87,7 +107,8 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="othelloPlayer1" class="form-label">Player 1:</label>
-                            <select class="form-select player-select" id="othelloPlayer1" name="player1Type" data-game="othello" data-player="1">
+                            <select class="form-select player-select" id="othelloPlayer1" name="player1Type"
+                                data-game="othello" data-player="1">
                                 <option value="human">Human</option>
                                 <option value="random">Random</option>
                                 <option value="minimax">Minimax</option>
@@ -98,7 +119,8 @@
                         </div>
                         <div class="col-md-6">
                             <label for="othelloPlayer2" class="form-label">Player 2:</label>
-                            <select class="form-select player-select" id="othelloPlayer2" name="player2Type" data-game="othello" data-player="2">
+                            <select class="form-select player-select" id="othelloPlayer2" name="player2Type"
+                                data-game="othello" data-player="2">
                                 <option value="human">Human</option>
                                 <option value="random">Random</option>
                                 <option value="minimax">Minimax</option>
@@ -114,14 +136,23 @@
                             <div class="card-body">
                                 <h6>Player 1 AI Options</h6>
                                 <div class="mb-2">
-                                    <label for="othelloPlayer1Sims" class="form-label">Simulations: <span id="othelloPlayer1SimsValue">50</span></label>
-                                    <input type="range" class="form-range" id="othelloPlayer1Sims" min="10" max="500" value="50">
+                                    <label for="othelloPlayer1Sims" class="form-label">Simulations: <span
+                                            id="othelloPlayer1SimsValue">50</span></label>
+                                    <input type="range" class="form-range" id="othelloPlayer1Sims" min="10" max="500"
+                                        value="50">
                                 </div>
                                 <div class="mb-2">
                                     <label for="othelloPlayer1Model" class="form-label">Model:</label>
                                     <select class="form-select model-select" id="othelloPlayer1Model">
                                         <option value="">-- Select Model --</option>
                                     </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="othelloPlayer1Temp" class="form-label">Temperature: <span
+                                            id="othelloPlayer1TempValue">0.0</span></label>
+                                    <input type="range" class="form-range" id="othelloPlayer1Temp" min="0.0" max="2.0"
+                                        step="0.1" value="0.0">
+                                    <div class="form-text">0.0 = Best move (Greedy), >0.0 = Varied/Stochastic</div>
                                 </div>
                             </div>
                         </div>
@@ -132,14 +163,23 @@
                             <div class="card-body">
                                 <h6>Player 2 AI Options</h6>
                                 <div class="mb-2">
-                                    <label for="othelloPlayer2Sims" class="form-label">Simulations: <span id="othelloPlayer2SimsValue">50</span></label>
-                                    <input type="range" class="form-range" id="othelloPlayer2Sims" min="10" max="500" value="50">
+                                    <label for="othelloPlayer2Sims" class="form-label">Simulations: <span
+                                            id="othelloPlayer2SimsValue">50</span></label>
+                                    <input type="range" class="form-range" id="othelloPlayer2Sims" min="10" max="500"
+                                        value="50">
                                 </div>
                                 <div class="mb-2">
                                     <label for="othelloPlayer2Model" class="form-label">Model:</label>
                                     <select class="form-select model-select" id="othelloPlayer2Model">
                                         <option value="">-- Select Model --</option>
                                     </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label for="othelloPlayer2Temp" class="form-label">Temperature: <span
+                                            id="othelloPlayer2TempValue">0.0</span></label>
+                                    <input type="range" class="form-range" id="othelloPlayer2Temp" min="0.0" max="2.0"
+                                        step="0.1" value="0.0">
+                                    <div class="form-text">0.0 = Best move (Greedy), >0.0 = Varied/Stochastic</div>
                                 </div>
                             </div>
                         </div>
