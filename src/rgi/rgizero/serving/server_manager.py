@@ -20,12 +20,10 @@ class ModelServerManager:
     
     def __init__(
         self,
-        game_name: str,
         base_port: int = 50051,
         startup_timeout: float = 30.0,
         verbose: bool = False,
     ):
-        self.game_name = game_name
         self.base_port = base_port
         self.startup_timeout = startup_timeout
         self.verbose = verbose
@@ -33,11 +31,12 @@ class ModelServerManager:
         self.servers: Dict[str, Tuple[int, mp.Process, mp.Event]] = {}  # model_path → (port, process, stop_event)
         self.next_port = base_port
     
-    def get_port(self, model_path: str) -> int:
+    def get_port(self, model_path: str, game_name: str) -> int:
         """Get the port for a model. Starts server if not running.
         
         Args:
             model_path: Path to model checkpoint
+            game_name: Name of game (e.g., "othello")
             
         Returns:
             Port number for the inference server
@@ -53,10 +52,10 @@ class ModelServerManager:
                 del self.servers[model_path]
         
         # Start new server
-        port = self._start_server(model_path)
+        port = self._start_server(model_path, game_name)
         return port
     
-    def _start_server(self, model_path: str) -> int:
+    def _start_server(self, model_path: str, game_name: str) -> int:
         """Start a new inference server process."""
         port = self.next_port
         self.next_port += 1
@@ -66,7 +65,7 @@ class ModelServerManager:
         
         process = mp.Process(
             target=run_server_process,
-            args=(model_path, self.game_name, port, ready_event, stop_event, self.verbose),
+            args=(model_path, game_name, port, ready_event, stop_event, self.verbose),
         )
         process.start()
         

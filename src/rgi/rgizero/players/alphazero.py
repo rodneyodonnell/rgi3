@@ -339,7 +339,7 @@ class AlphazeroPlayer(Player[TGameState, TAction]):
         if self.game.is_terminal(state):
             reward_array = self.game.reward_array(state)
             validate_array_probabilities_or_die(reward_array)
-            return (reward_array.shape[0] * reward_array - 1) / reward_array.shape[0]
+            return 2 * reward_array - 1
 
         if not node.legal_actions:
             raise ValueError("No legal actions in non-terminal state")

@@ -232,13 +232,29 @@ def run_server_process(
     # Load model
     device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
     
-    game = game_registry.create_game(game_name)
-    vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(game.base_game.all_actions()))
-    num_players = game.num_players(game.initial_state())
-    
     # Load model from checkpoint
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
+    # Check if we have metadata in checkpoint
+    if isinstance(checkpoint, dict):
+        if "vocab" in checkpoint:
+            vocab = Vocab.from_dict(checkpoint["vocab"])
+        else:
+            game = game_registry.create_game(game_name)
+            vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(game.base_game.all_actions()))
+            
+        if "num_players" in checkpoint:
+            num_players = checkpoint["num_players"]
+        else:
+            if 'game' not in locals():
+                game = game_registry.create_game(game_name)
+            num_players = game.num_players(game.initial_state())
+    else:
+        # Fallback for old/direct model saves
+        game = game_registry.create_game(game_name)
+        vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(game.base_game.all_actions()))
+        num_players = game.num_players(game.initial_state())
+
     if isinstance(checkpoint, dict) and "model_config" in checkpoint:
         # Re-instantiate from config and state dict
         config = TransformerConfig(**checkpoint["model_config"])

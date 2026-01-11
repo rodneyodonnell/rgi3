@@ -32,7 +32,7 @@ class UniformEvaluator(NetworkEvaluator):
     def evaluate(self, game, state, legal_actions) -> NetworkEvaluatorResult:
         n = len(legal_actions)
         uniform_policy = np.ones(n, dtype=np.float32) / n
-        neutral_values = np.ones(self.num_players, dtype=np.float32) / self.num_players
+        neutral_values = np.zeros(self.num_players, dtype=np.float32)
         return NetworkEvaluatorResult(uniform_policy, neutral_values)
     
     async def evaluate_async(self, game, state, legal_actions) -> NetworkEvaluatorResult:

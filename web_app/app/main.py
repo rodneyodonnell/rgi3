@@ -40,7 +40,7 @@ app.mount("/static", StaticFiles(directory="web_app/static"), name="static")
 VERBOSE_AI_LOGGING = True  # Set to False to disable AI score logging during games
 
 # Initialize Server Manager
-server_manager = ModelServerManager(game_name="othello")
+server_manager = ModelServerManager()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -171,7 +171,7 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                 
                 # Get/Start gRPC server
                 try:
-                    port = server_manager.get_port(model_path)
+                    port = server_manager.get_port(model_path, game_type)
                     logger.info(f"Model server running on port {port}")
                     
                     # Create Vocab for encoder
