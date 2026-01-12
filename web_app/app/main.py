@@ -1,6 +1,7 @@
 # web_app/main.py
 
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 from threading import Lock
 from typing import Any, cast
@@ -32,20 +33,25 @@ print("Server restarted at", datetime.now())
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# Initialize Server Manager
+server_manager = ModelServerManager()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup: nothing to do
+    yield
+    # Shutdown: clean up server manager
+    server_manager.shutdown_all()
+
+
+app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="web_app/templates")
 app.mount("/static", StaticFiles(directory="web_app/static"), name="static")
 
 # Configuration flags
 VERBOSE_AI_LOGGING = True  # Set to False to disable AI score logging during games
-
-# Initialize Server Manager
-server_manager = ModelServerManager()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    server_manager.shutdown_all()
 
 
 class ThreadSafeCounter:
