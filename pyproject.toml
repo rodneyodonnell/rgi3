@@ -85,4 +85,8 @@ markers = [
 exclude = [
   "src/rgi/nanogpt/fork/**",
   "**/notebooks/*.ipynb",
+  "scripts/**",  # Experimental scripts with grpc/multiprocessing
+  "src/rgi/rgizero/serving/**",  # Generated protobuf code
+  "src/rgi/rgizero/inference_server.py",  # Multiprocessing type issues
+  "web_app/**",  # Web app with grpc dependencies
 ]

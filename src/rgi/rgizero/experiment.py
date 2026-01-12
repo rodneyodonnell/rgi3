@@ -48,7 +48,7 @@ class ExperimentConfig:
 
     @staticmethod
     def from_json(data: dict):
-        return ExperimentConfig(**data)
+        return ExperimentConfig(**data)  # type: ignore[misc]
 
 
 class ExperimentRunner:
@@ -319,8 +319,9 @@ class ExperimentRunner:
         concurrent_games_per_worker = 200  # Each worker runs 200 concurrent games
 
         # Save model to temp file for server
-        model_path = tempfile.mktemp(suffix=f"_gen{gen_id}.pt")
-        torch.save({"model": model}, model_path)
+        with tempfile.NamedTemporaryFile(suffix=f"_gen{gen_id}.pt", delete=False) as tmp:
+            model_path = tmp.name
+            torch.save({"model": model}, model_path)
 
         # Start inference server in subprocess
         port = 50051 + gen_id  # Different port per generation

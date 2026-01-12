@@ -341,10 +341,14 @@ def print_dataset_stats(
     evaluator = None
     if model is not None:
         from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator  # hack to avoid circular import
+        from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
+        from typing import cast
 
         model.eval()
         device = next(model.parameters()).device
-        evaluator = ActionHistoryTransformerEvaluator(model, device, block_size, action_vocab, verbose=False)
+        evaluator = ActionHistoryTransformerEvaluator(
+            cast(ActionHistoryTransformer, model), device, block_size, action_vocab, verbose=False
+        )
 
     dd_n = defaultdict(int)
     dd_win0 = defaultdict(int)
