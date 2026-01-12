@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 from typing_extensions import override
+from numba import jit
 
 from rgi.rgizero.games.base import Game
 
@@ -80,33 +81,14 @@ class OthelloGame(Game[GameState, Action]):
 
     def _get_legal_moves(self, game_state: OthelloState, player: PlayerId) -> list[Action]:
         opponent = self.next_player(player)
-        legal_moves: list[Action] = []
-
-        for row in range(self.board_size):
-            for col in range(self.board_size):
-                if game_state.board[row, col] != 0:
-                    continue  # Skip occupied positions
-                if self._would_flip(game_state, (row, col), player, opponent):
-                    legal_moves.append(self._to_human_coords((row, col)))
-        return legal_moves
+        # Use numba-optimized version (returns grid coordinates)
+        grid_moves = _numba_get_legal_moves(game_state.board, player, opponent, self.board_size)
+        # Convert to human coordinates
+        return [self._to_human_coords((row, col)) for row, col in grid_moves]
 
     def _would_flip(self, state: OthelloState, position: Position, player: PlayerId, opponent: PlayerId) -> bool:
-        for dr, dc in self._directions:
-            r, c = position[0] + dr, position[1] + dc
-            found_opponent = False
-            while 0 <= r < self.board_size and 0 <= c < self.board_size:
-                if state.board[r, c] == 0:
-                    break
-                elif state.board[r, c] == opponent:
-                    found_opponent = True
-                elif state.board[r, c] == player:
-                    if found_opponent:
-                        return True
-                    else:
-                        break
-                r += dr
-                c += dc
-        return False
+        # Use numba-optimized version
+        return _numba_would_flip(state.board, position[0], position[1], player, opponent, self.board_size)
 
     @override
     def next_state(self, game_state: OthelloState, action: Action) -> OthelloState:
@@ -144,25 +126,8 @@ class OthelloGame(Game[GameState, Action]):
     def _get_positions_to_flip(
         self, state: OthelloState, position: Position, player: PlayerId, opponent: PlayerId
     ) -> list[Position]:
-        positions_to_flip = []
-
-        for dr, dc in self._directions:
-            r, c = position[0] + dr, position[1] + dc
-            temp_positions = []
-
-            while 0 <= r < self.board_size and 0 <= c < self.board_size:
-                if state.board[r, c] == 0:
-                    break
-                elif state.board[r, c] == opponent:
-                    temp_positions.append((r, c))
-                elif state.board[r, c] == player:
-                    if temp_positions:
-                        positions_to_flip.extend(temp_positions)
-                    break
-                r += dr
-                c += dc
-
-        return positions_to_flip
+        # Use numba-optimized version
+        return _numba_get_positions_to_flip(state.board, position[0], position[1], player, opponent, self.board_size)
 
     @override
     def is_terminal(self, game_state: OthelloState) -> bool:
@@ -205,3 +170,74 @@ class OthelloGame(Game[GameState, Action]):
                 elif cell == "○":
                     board[r, c] = 2
         return OthelloState(board=board, current_player=current_player, is_terminal=is_terminal)
+
+
+# Numba-optimized functions for performance-critical operations
+@jit(nopython=True)
+def _numba_would_flip(board: NDArray[np.int8], row: int, col: int, player: int, opponent: int, board_size: int) -> bool:
+    """Check if placing a piece at (row, col) would flip any opponent pieces."""
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+    for dr, dc in directions:
+        r, c = row + dr, col + dc
+        found_opponent = False
+
+        while 0 <= r < board_size and 0 <= c < board_size:
+            if board[r, c] == 0:
+                break
+            elif board[r, c] == opponent:
+                found_opponent = True
+            elif board[r, c] == player:
+                if found_opponent:
+                    return True
+                else:
+                    break
+            r += dr
+            c += dc
+
+    return False
+
+
+@jit(nopython=True)
+def _numba_get_legal_moves(
+    board: NDArray[np.int8], player: int, opponent: int, board_size: int
+) -> list[tuple[int, int]]:
+    """Get all legal moves for the current player (in grid coordinates)."""
+    legal_moves = []
+
+    for row in range(board_size):
+        for col in range(board_size):
+            if board[row, col] != 0:
+                continue  # Skip occupied positions
+            if _numba_would_flip(board, row, col, player, opponent, board_size):
+                legal_moves.append((row, col))
+
+    return legal_moves
+
+
+@jit(nopython=True)
+def _numba_get_positions_to_flip(
+    board: NDArray[np.int8], row: int, col: int, player: int, opponent: int, board_size: int
+) -> list[tuple[int, int]]:
+    """Get all positions that would be flipped by placing a piece at (row, col)."""
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+
+    positions_to_flip = []
+
+    for dr, dc in directions:
+        r, c = row + dr, col + dc
+        temp_positions = []
+
+        while 0 <= r < board_size and 0 <= c < board_size:
+            if board[r, c] == 0:
+                break
+            elif board[r, c] == opponent:
+                temp_positions.append((r, c))
+            elif board[r, c] == player:
+                if temp_positions:
+                    positions_to_flip.extend(temp_positions)
+                break
+            r += dr
+            c += dc
+
+    return positions_to_flip
