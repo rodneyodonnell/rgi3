@@ -229,10 +229,10 @@ class PipelineProfiler:
 
     async def profile_selfplay(self) -> PhaseStats:
         """Profile the self-play phase."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"PROFILING SELF-PLAY: {self.game_name}")
         print(f"Games: {self.num_games}, Simulations: {self.num_simulations}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         # Create random model
         model_config = TransformerConfig(
@@ -322,10 +322,10 @@ class PipelineProfiler:
 
     async def profile_training(self) -> PhaseStats:
         """Profile the training phase using a full experiment run."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"PROFILING TRAINING: {self.game_name}")
         print(f"Games/gen: {self.num_games}, Generations: {self.num_generations}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         # Create temp directory for experiment
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -395,10 +395,10 @@ class PipelineProfiler:
 
     async def profile_tournament(self) -> PhaseStats:
         """Profile the tournament/ELO calculation phase."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"PROFILING TOURNAMENT: {self.game_name}")
         print(f"Games: {self.tournament_games}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         # Create two random models to pit against each other
         model_config = TransformerConfig(
@@ -473,10 +473,10 @@ class PipelineProfiler:
 
     async def run_full_profile(self) -> PipelineReport:
         """Run complete pipeline profiling."""
-        print(f"\n{'#'*60}")
+        print(f"\n{'#' * 60}")
         print(f"FULL PIPELINE PROFILING: {self.game_name.upper()}")
         print(f"Device: {self.device}")
-        print(f"{'#'*60}")
+        print(f"{'#' * 60}")
 
         total_start = time.time()
 
@@ -510,7 +510,7 @@ def format_report(report: PipelineReport) -> str:
 
     output.write(f"# Performance Profile: {report.game_name.title()}\n\n")
     output.write(f"**Device:** {report.device}\n")
-    output.write(f"**Total Time:** {report.total_time:.1f}s ({report.total_time/60:.1f} min)\n\n")
+    output.write(f"**Total Time:** {report.total_time:.1f}s ({report.total_time / 60:.1f} min)\n\n")
 
     # Time breakdown
     output.write("## Time Breakdown\n\n")

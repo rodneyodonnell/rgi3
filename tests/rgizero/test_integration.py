@@ -10,7 +10,6 @@ These tests run end-to-end training loops to ensure the system works correctly:
 Tests use minimal configurations (tiny models, few games) to run quickly (<5 minutes).
 """
 
-import asyncio
 import shutil
 import tempfile
 from contextlib import asynccontextmanager
@@ -18,11 +17,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
 
 from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator, AsyncNetworkEvaluator
 from rgi.rgizero.experiment import ExperimentConfig, ExperimentRunner
-from rgi.rgizero.models.transformer import TransformerConfig
 from rgi.rgizero.players.alphazero import AlphazeroPlayer
 from rgi.rgizero.tournament import Tournament
 
@@ -160,7 +157,7 @@ async def test_full_training_pipeline_connect4(temp_experiment_dir, minimal_trai
     for gen_id in range(1, config.num_generations + 1):  # Gen 0 has no trajectory
         assert runner.get_trajectory_path(gen_id).exists(), f"Missing trajectory for gen {gen_id}"
 
-    print(f"✓ Connect4 training pipeline completed successfully")
+    print("✓ Connect4 training pipeline completed successfully")
 
 
 @pytest.mark.asyncio
@@ -221,6 +218,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
         await async_evaluator.start()
 
         try:
+
             def factory():
                 rng = np.random.default_rng(np.random.randint(0, 2**31))
                 return AlphazeroPlayer(
@@ -251,7 +249,7 @@ async def test_model_improvement_validation(temp_experiment_dir, minimal_trainin
         elo_gen0 = tournament.stats["gen_0"].elo
         elo_final = tournament.stats["gen_final"].elo
 
-        print(f"\nELO Ratings:")
+        print("\nELO Ratings:")
         print(f"  Gen 0 (random): {elo_gen0:.1f}")
         print(f"  Gen {config.num_generations} (trained): {elo_final:.1f}")
 
@@ -335,6 +333,7 @@ async def test_elo_progression_across_generations(temp_experiment_dir, minimal_t
                         add_noise=False,
                         simulations=20,
                     )
+
                 return factory
 
             factories[f"gen_{gen_id}"] = make_factory(async_eval)
@@ -451,6 +450,7 @@ async def test_elo_progression_connect4(temp_experiment_dir, minimal_training_ar
                         add_noise=False,
                         simulations=20,
                     )
+
                 return factory
 
             factories[f"gen_{gen_id}"] = make_factory(async_eval)
@@ -470,7 +470,7 @@ async def test_elo_progression_connect4(temp_experiment_dir, minimal_training_ar
         best_trained_elo = max(all_trained_elos)
         best_trained_gen = all_trained_elos.index(best_trained_elo) + 1
 
-        print(f"\nConnect4 Results:")
+        print("\nConnect4 Results:")
         print(f"Gen 0 (random): {elo_gen0:.1f}")
         print(f"Best trained: Gen {best_trained_gen}, ELO={best_trained_elo:.1f}")
 
@@ -522,7 +522,7 @@ async def test_elo_progression_othello(temp_experiment_dir, minimal_training_arg
     test_start = time.time()
     await runner.run_async()
     training_time = time.time() - test_start
-    print(f"\nTotal training time: {training_time:.1f}s ({training_time/60:.1f} min)")
+    print(f"\nTotal training time: {training_time:.1f}s ({training_time / 60:.1f} min)")
 
     # Load all models
     models = {gen_id: runner.load_model(gen_id) for gen_id in range(config.num_generations + 1)}
@@ -559,6 +559,7 @@ async def test_elo_progression_othello(temp_experiment_dir, minimal_training_arg
                         add_noise=False,
                         simulations=20,
                     )
+
                 return factory
 
             factories[f"gen_{gen_id}"] = make_factory(async_eval)
@@ -583,14 +584,16 @@ async def test_elo_progression_othello(temp_experiment_dir, minimal_training_arg
         best_trained_elo = max(all_trained_elos)
         best_trained_gen = all_trained_elos.index(best_trained_elo) + 1
 
-        print(f"\nOthello Results:")
+        print("\nOthello Results:")
         print(f"Gen 0 (random): {elo_gen0:.1f}")
         print(f"Best trained: Gen {best_trained_gen}, ELO={best_trained_elo:.1f}")
 
         elo_improvement = best_trained_elo - elo_gen0
         print(f"\nELO Improvement: {elo_improvement:+.1f} ELO")
-        print(f"Tournament time: {tournament_time:.1f}s ({tournament_games} games, {tournament_time/tournament_games:.2f}s/game)")
-        print(f"\nTotal test time: {time.time() - test_start:.1f}s ({(time.time() - test_start)/60:.1f} min)")
+        print(
+            f"Tournament time: {tournament_time:.1f}s ({tournament_games} games, {tournament_time / tournament_games:.2f}s/game)"
+        )
+        print(f"\nTotal test time: {time.time() - test_start:.1f}s ({(time.time() - test_start) / 60:.1f} min)")
 
         assert elo_improvement > 50, (
             f"Othello: Best trained model (Gen {best_trained_gen}, ELO={best_trained_elo:.1f}) "

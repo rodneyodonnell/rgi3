@@ -263,7 +263,7 @@ class ExperimentRunner:
             results = await self._play_generation_local(model, gen_id)
 
         elapsed = time.time() - start_time
-        print(f"Self-play completed in {elapsed:.1f}s ({len(results)} games, {elapsed/len(results):.2f}s/game)")
+        print(f"Self-play completed in {elapsed:.1f}s ({len(results)} games, {elapsed / len(results):.2f}s/game)")
 
         # Write Dataset
         if write_dataset:
@@ -303,7 +303,7 @@ class ExperimentRunner:
 
     async def _play_generation_grpc(self, model, gen_id):
         """Run self-play with gRPC inference server and multiple worker processes.
-        
+
         Spawns a dedicated inference server process and multiple worker processes,
         each with their own gRPC client. This maximizes GPU utilization by having
         multiple CPU processes feed requests to the GPU.
@@ -320,7 +320,7 @@ class ExperimentRunner:
 
         # Save model to temp file for server
         model_path = tempfile.mktemp(suffix=f"_gen{gen_id}.pt")
-        torch.save({'model': model}, model_path)
+        torch.save({"model": model}, model_path)
 
         # Start inference server in subprocess
         port = 50051 + gen_id  # Different port per generation

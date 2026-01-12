@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from rgi.rgizero.games import game_registry
 from rgi.rgizero.models.transformer import TransformerConfig
-from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
 from rgi.rgizero.models.tuner import create_random_model
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.common import TOKENS
@@ -53,23 +52,11 @@ async def profile_games(game_name: str, num_games: int, num_simulations: int = 5
         bias=False,
     )
 
-    model = create_random_model(
-        model_config,
-        action_vocab.vocab_size,
-        num_players,
-        seed=42,
-        device=device
-    )
+    model = create_random_model(model_config, action_vocab.vocab_size, num_players, seed=42, device=device)
 
     # Setup evaluator
-    serial_evaluator = ActionHistoryTransformerEvaluator(
-        model, device=device, block_size=100, vocab=action_vocab
-    )
-    async_evaluator = AsyncNetworkEvaluator(
-        base_evaluator=serial_evaluator,
-        max_batch_size=1024,
-        verbose=False
-    )
+    serial_evaluator = ActionHistoryTransformerEvaluator(model, device=device, block_size=100, vocab=action_vocab)
+    async_evaluator = AsyncNetworkEvaluator(base_evaluator=serial_evaluator, max_batch_size=1024, verbose=False)
 
     # Player factory
     master_rng = np.random.default_rng(42)
@@ -114,9 +101,9 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"\n{'='*60}")
-    print(f"PROFILING CPU HOTSPOTS")
-    print(f"{'='*60}\n")
+    print(f"\n{'=' * 60}")
+    print("PROFILING CPU HOTSPOTS")
+    print(f"{'=' * 60}\n")
 
     # Run with cProfile
     profiler = cProfile.Profile()
@@ -128,44 +115,44 @@ def main():
     profiler.disable()
 
     print(f"\nCompleted {games_completed} games")
-    print(f"\n{'='*60}")
-    print(f"TOP CPU HOTSPOTS (by cumulative time)")
-    print(f"{'='*60}\n")
+    print(f"\n{'=' * 60}")
+    print("TOP CPU HOTSPOTS (by cumulative time)")
+    print(f"{'=' * 60}\n")
 
     # Print stats
     s = StringIO()
     stats = pstats.Stats(profiler, stream=s)
     stats.strip_dirs()
-    stats.sort_stats('cumulative')
+    stats.sort_stats("cumulative")
     stats.print_stats(30)  # Top 30 functions
 
     print(s.getvalue())
 
-    print(f"\n{'='*60}")
-    print(f"TOP CPU HOTSPOTS (by time in function itself)")
-    print(f"{'='*60}\n")
+    print(f"\n{'=' * 60}")
+    print("TOP CPU HOTSPOTS (by time in function itself)")
+    print(f"{'=' * 60}\n")
 
     s = StringIO()
     stats = pstats.Stats(profiler, stream=s)
     stats.strip_dirs()
-    stats.sort_stats('time')
+    stats.sort_stats("time")
     stats.print_stats(30)
 
     print(s.getvalue())
 
     # Look for specific bottlenecks
-    print(f"\n{'='*60}")
-    print(f"OPTIMIZATION OPPORTUNITIES")
-    print(f"{'='*60}\n")
+    print(f"\n{'=' * 60}")
+    print("OPTIMIZATION OPPORTUNITIES")
+    print(f"{'=' * 60}\n")
 
     stats = pstats.Stats(profiler)
 
     # Find MCTS-related functions
     print("Functions containing 'mcts' or 'select' or 'expand':")
-    stats.print_stats('mcts|select|expand|simulate|backprop')
+    stats.print_stats("mcts|select|expand|simulate|backprop")
 
     print("\nFunctions containing 'game' or 'legal' or 'apply':")
-    stats.print_stats('game|legal|apply|clone')
+    stats.print_stats("game|legal|apply|clone")
 
 
 if __name__ == "__main__":

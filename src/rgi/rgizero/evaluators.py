@@ -22,19 +22,19 @@ from rgi.rgizero.models.action_history_transformer import ActionHistoryTransform
 
 class UniformEvaluator(NetworkEvaluator):
     """Simple evaluator that returns uniform policy and neutral values.
-    
+
     Useful for testing MCTS without a trained model, or as a baseline.
     """
-    
+
     def __init__(self, num_players: int = 2):
         self.num_players = num_players
-    
+
     def evaluate(self, game, state, legal_actions) -> NetworkEvaluatorResult:
         n = len(legal_actions)
         uniform_policy = np.ones(n, dtype=np.float32) / n
         neutral_values = np.zeros(self.num_players, dtype=np.float32)
         return NetworkEvaluatorResult(uniform_policy, neutral_values)
-    
+
     async def evaluate_async(self, game, state, legal_actions) -> NetworkEvaluatorResult:
         return self.evaluate(game, state, legal_actions)
 
@@ -70,11 +70,13 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
         """Full evaluation: encode states and run inference."""
         encoded = self.encode_batch(states_list, legal_actions_list)
         return self.infer_from_encoded(*encoded)
-    
-    def encode_batch(self, states_list, legal_actions_list) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
+
+    def encode_batch(
+        self, states_list, legal_actions_list
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
         """
         Encode states for inference. Can be called on worker side.
-        
+
         Returns:
             x_np: Encoded action histories (B, max_len) int32
             encoded_len: Length of each encoded history (B,) int32
@@ -82,7 +84,7 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
             legal_indices: List of legal action indices per state
         """
         B = len(states_list)
-        
+
         # Encode action histories
         encoded_rows = []
         encoded_len = []
@@ -91,17 +93,17 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
             encoded_rows.append(encoded)
             encoded_len.append(len(encoded))
         max_encoded_len = max(encoded_len) if encoded_len else 1
-        
+
         if max_encoded_len > self.block_size:
             raise ValueError(f"max_encoded_len {max_encoded_len} > block_size {self.block_size}")
-        
+
         # Pad to numpy array
         x_np = np.zeros((B, max_encoded_len), dtype=np.int32)
         for i, row in enumerate(encoded_rows):
-            x_np[i, :len(row)] = row
-        
+            x_np[i, : len(row)] = row
+
         encoded_len_np = np.array(encoded_len, dtype=np.int32)
-        
+
         # Build legal action mask
         vocab_size = len(self.vocab.stoi)
         legal_mask = np.zeros((B, vocab_size), dtype=np.bool_)
@@ -110,9 +112,9 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
             indices = np.array([self.vocab.stoi[a] for a in legal_actions], dtype=np.int32)
             legal_mask[i, indices] = True
             legal_indices.append(indices)
-        
+
         return x_np, encoded_len_np, legal_mask, legal_indices
-    
+
     @torch.inference_mode()
     def infer_from_encoded(
         self,
@@ -123,51 +125,51 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
     ) -> list[NetworkEvaluatorResult]:
         """
         Run inference from pre-encoded inputs. Runs on GPU.
-        
+
         Args:
             x_np: Encoded action histories (B, max_len) int32
             encoded_len_np: Length of each encoded sequence (B,) int32
             legal_mask: Legal action mask (B, vocab_size) bool
             legal_indices: List of legal action indices per state
-        
+
         Returns:
             List of NetworkEvaluatorResult
         """
         t0 = time.time()
         B = len(x_np)
-        
+
         # Transfer to GPU
         x_pinned = self._maybe_pin(torch.from_numpy(x_np))
         x_gpu = x_pinned.to(self.device, non_blocking=True)
-        
+
         encoded_len_pinned = self._maybe_pin(torch.from_numpy(encoded_len_np))
         encoded_len_gpu = encoded_len_pinned.to(self.device, non_blocking=True)
-        
+
         # Run model
         (policy_logits_gpu, value_logits_gpu), _, _ = self.model(x_gpu, encoded_len=encoded_len_gpu)
-        
+
         policy_logits_gpu = policy_logits_gpu.squeeze(1)
         value_logits_gpu = value_logits_gpu.squeeze(1)
-        
+
         # Apply legal mask
         legal_policy_mask_pinned = self._maybe_pin(torch.from_numpy(legal_mask))
         legal_policy_mask_gpu = legal_policy_mask_pinned.to(self.device, non_blocking=True)
         masked_policy_logits_gpu = policy_logits_gpu.masked_fill(~legal_policy_mask_gpu, float("-inf"))
-        
+
         policy = F.softmax(masked_policy_logits_gpu, dim=-1)
         val_probs = F.softmax(value_logits_gpu, dim=-1)
         value = val_probs * 2 - 1  # map to [-1, 1]
-        
+
         # Transfer back to CPU
         policy_np_batch = policy.cpu().numpy()
         value_np_batch = value.cpu().numpy()
-        
+
         # Extract results
         ret = []
         for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_mask)):
             legal_policy = policy_np[mask]
             ret.append(NetworkEvaluatorResult(legal_policy, value_np))
-        
+
         t1 = time.time()
         self.total_time += t1 - t0
         self.total_evals += B

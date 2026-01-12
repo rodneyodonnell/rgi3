@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import torch
 
-from rgi.rgizero.data.trajectory_dataset import TrajectoryDataset, Vocab
+from rgi.rgizero.data.trajectory_dataset import TrajectoryDataset
 from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator
 from rgi.rgizero.experiment import ExperimentConfig, ExperimentRunner
 
@@ -194,17 +194,14 @@ async def test_model_predictions_vs_training_data(temp_experiment_dir, minimal_t
 
     # The trained model should have lower loss (learning something)
     assert avg_loss_final < avg_loss_gen0, (
-        f"Trained model should have lower loss than random model. "
-        f"Gen0={avg_loss_gen0:.4f}, Final={avg_loss_final:.4f}"
+        f"Trained model should have lower loss than random model. Gen0={avg_loss_gen0:.4f}, Final={avg_loss_final:.4f}"
     )
 
     # The improvement should be meaningful (at least 5% better)
     improvement_pct = (avg_loss_gen0 - avg_loss_final) / avg_loss_gen0 * 100
     print(f"  Improvement: {improvement_pct:.1f}%")
 
-    assert improvement_pct > 5, (
-        f"Model should show meaningful improvement (>5%). Got {improvement_pct:.1f}%"
-    )
+    assert improvement_pct > 5, f"Model should show meaningful improvement (>5%). Got {improvement_pct:.1f}%"
 
     print("✓ Model predictions show improvement over random baseline")
 

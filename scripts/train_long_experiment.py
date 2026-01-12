@@ -102,6 +102,7 @@ async def run_tournament_evaluation(runner, generation_ids, num_games=50, concur
                         add_noise=False,
                         simulations=50,
                     )
+
                 return factory
 
             factories[f"gen_{gen_id}"] = make_factory(async_eval)
@@ -120,20 +121,17 @@ async def run_tournament_evaluation(runner, generation_ids, num_games=50, concur
 
 async def main():
     parser = argparse.ArgumentParser(description="Run long-form training experiment")
-    parser.add_argument("--game", default="count21", choices=["count21", "connect4", "othello"],
-                       help="Game to train on")
-    parser.add_argument("--generations", type=int, default=20,
-                       help="Number of generations to train")
-    parser.add_argument("--games-per-gen", type=int, default=150,
-                       help="Number of self-play games per generation")
-    parser.add_argument("--simulations", type=int, default=50,
-                       help="MCTS simulations per move during self-play")
-    parser.add_argument("--output-dir", type=Path, default=Path("experiments/long_run"),
-                       help="Output directory for experiment")
-    parser.add_argument("--tournament-interval", type=int, default=5,
-                       help="Run tournament every N generations")
-    parser.add_argument("--seed", type=int, default=42,
-                       help="Random seed")
+    parser.add_argument(
+        "--game", default="count21", choices=["count21", "connect4", "othello"], help="Game to train on"
+    )
+    parser.add_argument("--generations", type=int, default=20, help="Number of generations to train")
+    parser.add_argument("--games-per-gen", type=int, default=150, help="Number of self-play games per generation")
+    parser.add_argument("--simulations", type=int, default=50, help="MCTS simulations per move during self-play")
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("experiments/long_run"), help="Output directory for experiment"
+    )
+    parser.add_argument("--tournament-interval", type=int, default=5, help="Run tournament every N generations")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     args = parser.parse_args()
 
@@ -155,15 +153,15 @@ async def main():
         progress_bar=True,
     )
 
-    print(f"=" * 80)
+    print("=" * 80)
     print(f"Long Training Experiment: {args.game.upper()}")
-    print(f"=" * 80)
+    print("=" * 80)
     print(f"Generations: {args.generations}")
     print(f"Games per generation: {args.games_per_gen}")
     print(f"MCTS simulations: {args.simulations}")
     print(f"Output directory: {args.output_dir}")
     print(f"Tournament every: {args.tournament_interval} generations")
-    print(f"=" * 80)
+    print("=" * 80)
     print()
 
     # Run training

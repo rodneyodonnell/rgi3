@@ -174,20 +174,9 @@ class OthelloGame(Game[GameState, Action]):
 
 # Numba-optimized functions for performance-critical operations
 @jit(nopython=True)
-def _numba_would_flip(
-    board: NDArray[np.int8],
-    row: int,
-    col: int,
-    player: int,
-    opponent: int,
-    board_size: int
-) -> bool:
+def _numba_would_flip(board: NDArray[np.int8], row: int, col: int, player: int, opponent: int, board_size: int) -> bool:
     """Check if placing a piece at (row, col) would flip any opponent pieces."""
-    directions = [
-        (-1, -1), (-1, 0), (-1, 1),
-        (0, -1), (0, 1),
-        (1, -1), (1, 0), (1, 1)
-    ]
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
     for dr, dc in directions:
         r, c = row + dr, col + dc
@@ -211,10 +200,7 @@ def _numba_would_flip(
 
 @jit(nopython=True)
 def _numba_get_legal_moves(
-    board: NDArray[np.int8],
-    player: int,
-    opponent: int,
-    board_size: int
+    board: NDArray[np.int8], player: int, opponent: int, board_size: int
 ) -> list[tuple[int, int]]:
     """Get all legal moves for the current player (in grid coordinates)."""
     legal_moves = []
@@ -231,19 +217,10 @@ def _numba_get_legal_moves(
 
 @jit(nopython=True)
 def _numba_get_positions_to_flip(
-    board: NDArray[np.int8],
-    row: int,
-    col: int,
-    player: int,
-    opponent: int,
-    board_size: int
+    board: NDArray[np.int8], row: int, col: int, player: int, opponent: int, board_size: int
 ) -> list[tuple[int, int]]:
     """Get all positions that would be flipped by placing a piece at (row, col)."""
-    directions = [
-        (-1, -1), (-1, 0), (-1, 1),
-        (0, -1), (0, 1),
-        (1, -1), (1, 0), (1, 1)
-    ]
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
     positions_to_flip = []
 

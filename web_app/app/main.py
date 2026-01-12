@@ -42,6 +42,7 @@ VERBOSE_AI_LOGGING = True  # Set to False to disable AI score logging during gam
 # Initialize Server Manager
 server_manager = ModelServerManager()
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     server_manager.shutdown_all()
@@ -146,19 +147,19 @@ async def create_new_game(request: Request) -> dict[str, Any]:
     for player_id, options in player_options.items():
         p_type = options.get("player_type", "human")
         constructor_options = {k: v for k, v in options.items() if k != "player_type"}
-        
+
         # Handle AlphaZero variants specially
         if p_type in ("zerozero", "zerozero_best", "alphazero_custom"):
             sims = constructor_options.get("simulations", 50)  # Default 50 for fast play
             temp = constructor_options.get("temperature", 0.0)  # Default 0.0 (greedy)
-            
+
             if p_type == "zerozero":
                 # Untrained: use uniform evaluator (no model needed)
                 num_players = game.num_players(state)
                 evaluator = UniformEvaluator(num_players=num_players)
                 logger.info(f"Setting up ZeroZero (Untrained) with uniform evaluator, {sims} simulations, temp={temp}")
                 players[player_id] = AlphazeroPlayer(game=game, evaluator=evaluator, simulations=sims, temperature=temp)
-                
+
             elif p_type in ("zerozero_best", "alphazero_custom"):
                 # Get model path
                 if p_type == "zerozero_best":
@@ -167,27 +168,22 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                     model_path = constructor_options.get("model_path", "")
                     if not model_path:
                         raise HTTPException(status_code=400, detail="alphazero_custom requires model_path")
-                
+
                 logger.info(f"Setting up AlphaZero with model: {model_path}, {sims} simulations, temp={temp}")
-                
+
                 # Get/Start gRPC server
                 try:
                     port = server_manager.get_port(model_path, game_type)
                     logger.info(f"Model server running on port {port}")
-                    
+
                     # Create Vocab for encoder
                     base_game_ref = game.base_game if hasattr(game, "base_game") else game
                     vocab = Vocab(itos=[TOKENS.START_OF_GAME] + list(base_game_ref.all_actions()))
 
                     # Create evaluator connected to this port
-                    evaluator = GrpcEvaluator(
-                        host="localhost",
-                        port=port,
-                        vocab=vocab,
-                        vocab_size=vocab.vocab_size
-                    )
+                    evaluator = GrpcEvaluator(host="localhost", port=port, vocab=vocab, vocab_size=vocab.vocab_size)
                     await evaluator.connect()
-                    
+
                     players[player_id] = AlphazeroPlayer(
                         game=game, evaluator=evaluator, simulations=sims, temperature=temp
                     )
@@ -195,15 +191,16 @@ async def create_new_game(request: Request) -> dict[str, Any]:
                     logger.error(f"Failed to start model server: {e}")
                     raise HTTPException(status_code=500, detail=f"Failed to load AI model: {e}")
             continue
-        
+
         # Handle other player types via registry
         if p_type not in WEB_PLAYER_REGISTRY:
             logger.warning(f"Unknown player type '{p_type}', defaulting to human")
             p_type = "human"
-        
+
         player_cls = WEB_PLAYER_REGISTRY[p_type]
         try:
             import inspect
+
             sig = inspect.signature(player_cls.__init__)
             call_args = constructor_options.copy()
 
@@ -275,7 +272,7 @@ async def get_game_state(game_id: int) -> dict[str, Any]:
         response_data["current_player"] = game.current_player_id(state)
         response_data["is_terminal"] = game.is_terminal(state)
         response_data["winner"] = None
-    
+
     # Calculate winner from reward() if game is terminal but winner not in state
     # (Othello doesn't have a winner field in state, it's computed from piece counts)
     if game.is_terminal(state) and response_data.get("winner") is None:
@@ -387,7 +384,7 @@ async def make_ai_move(game_id: int) -> dict[str, Any]:
 
         new_state = game.next_state(state, action)
         game_session["state"] = new_state
-        
+
         # Log predicted scores if verbose logging is enabled
         if VERBOSE_AI_LOGGING and "current_player_mean_values" in result.info:
             mean_values = result.info["current_player_mean_values"]
@@ -398,10 +395,13 @@ async def make_ai_move(game_id: int) -> dict[str, Any]:
             chosen_value = mean_values[action_idx] if action_idx >= 0 else None
             logger.info(
                 "AI Player %d predicted scores: action=%s value=%.3f, best_value=%.3f, visit_counts=%s",
-                current_player_id, action, chosen_value or 0, max(mean_values) if len(mean_values) > 0 else 0,
-                visit_counts.tolist() if hasattr(visit_counts, 'tolist') else visit_counts
+                current_player_id,
+                action,
+                chosen_value or 0,
+                max(mean_values) if len(mean_values) > 0 else 0,
+                visit_counts.tolist() if hasattr(visit_counts, "tolist") else visit_counts,
             )
-        
+
         logger.info("AI move made for player %d. Action: %s", current_player_id, action)
         return {"success": True}
     except Exception as e:

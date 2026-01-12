@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from rgi.rgizero.games import game_registry
 from rgi.rgizero.models.transformer import TransformerConfig
-from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
 from rgi.rgizero.models.tuner import create_random_model
 from rgi.rgizero.data.trajectory_dataset import Vocab
 from rgi.rgizero.common import TOKENS
@@ -47,6 +46,7 @@ class ResourceMonitor:
         if device == "cuda":
             try:
                 import pynvml
+
                 pynvml.nvmlInit()
                 self.handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             except:
@@ -76,6 +76,7 @@ class ResourceMonitor:
                 if self.device == "cuda":
                     try:
                         import pynvml
+
                         util = pynvml.nvmlDeviceGetUtilizationRates(self.handle)
                         self.gpu_samples.append(util.gpu)
                     except:
@@ -111,7 +112,7 @@ class ResourceMonitor:
             stats["gpu_max"] = np.max(self.gpu_samples)
 
         # Per-core statistics
-        if hasattr(self, 'cpu_per_core_samples') and self.cpu_per_core_samples:
+        if hasattr(self, "cpu_per_core_samples") and self.cpu_per_core_samples:
             # Average across all samples for each core
             per_core_array = np.array(self.cpu_per_core_samples)
             stats["cpu_per_core_mean"] = np.mean(per_core_array, axis=0)
@@ -148,22 +149,14 @@ async def profile_selfplay(game_name: str, num_games: int, num_simulations: int 
     )
 
     # Create random model
-    model = create_random_model(
-        model_config,
-        action_vocab.vocab_size,
-        num_players,
-        seed=42,
-        device=device
-    )
+    model = create_random_model(model_config, action_vocab.vocab_size, num_players, seed=42, device=device)
 
     # Setup evaluator
-    serial_evaluator = ActionHistoryTransformerEvaluator(
-        model, device=device, block_size=100, vocab=action_vocab
-    )
+    serial_evaluator = ActionHistoryTransformerEvaluator(model, device=device, block_size=100, vocab=action_vocab)
     async_evaluator = AsyncNetworkEvaluator(
         base_evaluator=serial_evaluator,
         max_batch_size=1024,
-        verbose=True  # Enable verbose to see batching stats
+        verbose=True,  # Enable verbose to see batching stats
     )
 
     # Player factory
@@ -201,6 +194,7 @@ async def profile_selfplay(game_name: str, num_games: int, num_simulations: int 
         tasks = [play_one_game() for _ in range(num_games)]
 
         from tqdm.asyncio import tqdm
+
         results = await tqdm.gather(*tasks, desc="Self-play")
 
     finally:
@@ -217,29 +211,31 @@ async def profile_selfplay(game_name: str, num_games: int, num_simulations: int 
     print("PROFILING RESULTS")
     print("=" * 60)
     print()
-    print(f"Total time: {elapsed:.1f}s ({elapsed/60:.1f} min)")
+    print(f"Total time: {elapsed:.1f}s ({elapsed / 60:.1f} min)")
     print(f"Games played: {num_games}")
-    print(f"Time per game: {elapsed/num_games:.2f}s")
-    print(f"Games per second: {num_games/elapsed:.2f}")
+    print(f"Time per game: {elapsed / num_games:.2f}s")
+    print(f"Games per second: {num_games / elapsed:.2f}")
     print()
-    print(f"CPU utilization (overall):")
+    print("CPU utilization (overall):")
     print(f"  Mean: {resource_stats['cpu_mean']:.1f}%")
     print(f"  Max:  {resource_stats['cpu_max']:.1f}%")
 
     if "cpu_per_core_mean" in resource_stats:
         print()
         print(f"CPU per-core utilization ({resource_stats['num_cores']} cores):")
-        for i, (mean, max_val) in enumerate(zip(resource_stats['cpu_per_core_mean'], resource_stats['cpu_per_core_max'])):
+        for i, (mean, max_val) in enumerate(
+            zip(resource_stats["cpu_per_core_mean"], resource_stats["cpu_per_core_max"])
+        ):
             print(f"  Core {i}: mean={mean:.1f}%, max={max_val:.1f}%")
         print()
-        cores_above_50 = sum(1 for m in resource_stats['cpu_per_core_mean'] if m > 50)
-        cores_above_80 = sum(1 for m in resource_stats['cpu_per_core_mean'] if m > 80)
+        cores_above_50 = sum(1 for m in resource_stats["cpu_per_core_mean"] if m > 50)
+        cores_above_80 = sum(1 for m in resource_stats["cpu_per_core_mean"] if m > 80)
         print(f"  Cores with >50% average utilization: {cores_above_50}/{resource_stats['num_cores']}")
         print(f"  Cores with >80% average utilization: {cores_above_80}/{resource_stats['num_cores']}")
     print()
 
     if "gpu_mean" in resource_stats:
-        print(f"GPU utilization:")
+        print("GPU utilization:")
         print(f"  Mean: {resource_stats['gpu_mean']:.1f}%")
         print(f"  Max:  {resource_stats['gpu_max']:.1f}%")
         print()
@@ -253,26 +249,26 @@ async def profile_selfplay(game_name: str, num_games: int, num_simulations: int 
 
     # Estimate time breakdown
     total_mcts_sims = num_games * 2 * num_simulations  # 2 players per game
-    estimated_nn_time = async_evaluator.stats['total_evals'] / async_evaluator.stats['mean_evals_per_sec']
+    estimated_nn_time = async_evaluator.stats["total_evals"] / async_evaluator.stats["mean_evals_per_sec"]
     mcts_time = elapsed - estimated_nn_time
 
     print()
     print("Estimated time breakdown:")
-    print(f"  Neural network inference: {estimated_nn_time:.1f}s ({estimated_nn_time/elapsed*100:.1f}%)")
-    print(f"  MCTS + game logic: {mcts_time:.1f}s ({mcts_time/elapsed*100:.1f}%)")
+    print(f"  Neural network inference: {estimated_nn_time:.1f}s ({estimated_nn_time / elapsed * 100:.1f}%)")
+    print(f"  MCTS + game logic: {mcts_time:.1f}s ({mcts_time / elapsed * 100:.1f}%)")
     print()
     print("Optimization opportunities:")
-    if resource_stats['cpu_mean'] < 50:
+    if resource_stats["cpu_mean"] < 50:
         print("  ⚠ Low overall CPU utilization - could benefit from more parallelism")
         if "cpu_per_core_mean" in resource_stats:
-            max_core = max(resource_stats['cpu_per_core_mean'])
+            max_core = max(resource_stats["cpu_per_core_mean"])
             if max_core < 50:
                 print(f"    → All cores underutilized (max core: {max_core:.1f}%) - increase concurrent games")
             elif max_core > 80:
                 print(f"    → One core saturated ({max_core:.1f}%) - likely single-threaded bottleneck")
-    if "gpu_mean" in resource_stats and resource_stats['gpu_mean'] < 30:
+    if "gpu_mean" in resource_stats and resource_stats["gpu_mean"] < 30:
         print("  ⚠ Low GPU utilization - could benefit from larger batch sizes")
-    if async_evaluator.stats['mean_batch_size'] < 100:
+    if async_evaluator.stats["mean_batch_size"] < 100:
         print(f"  ⚠ Small batch size ({async_evaluator.stats['mean_batch_size']:.1f}) - consider tuning async batching")
     print()
 

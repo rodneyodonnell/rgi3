@@ -38,11 +38,7 @@ def run_test(game: str, run_number: int, log_dir: Path) -> tuple[bool, float | N
 
     log_file = log_dir / f"{game}-run-{run_number}.log"
 
-    cmd = [
-        "uv", "run", "pytest",
-        f"tests/rgizero/test_integration.py::{test_name}",
-        "-v", "-s"
-    ]
+    cmd = ["uv", "run", "pytest", f"tests/rgizero/test_integration.py::{test_name}", "-v", "-s"]
 
     print(f"Starting {game} run {run_number}...")
 
@@ -52,7 +48,7 @@ def run_test(game: str, run_number: int, log_dir: Path) -> tuple[bool, float | N
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=7200  # 120 minute timeout for extended Othello experiments
+            timeout=7200,  # 120 minute timeout for extended Othello experiments
         )
 
         # Write log
@@ -68,7 +64,11 @@ def run_test(game: str, run_number: int, log_dir: Path) -> tuple[bool, float | N
             elo_improvement = float(match.group(1))
 
         if passed:
-            print(f"✓ {game} run {run_number}: PASSED (Improvement: {elo_improvement:+.1f} ELO)" if elo_improvement else f"✓ {game} run {run_number}: PASSED")
+            print(
+                f"✓ {game} run {run_number}: PASSED (Improvement: {elo_improvement:+.1f} ELO)"
+                if elo_improvement
+                else f"✓ {game} run {run_number}: PASSED"
+            )
         else:
             print(f"✗ {game} run {run_number}: FAILED")
 
@@ -86,16 +86,9 @@ def run_test(game: str, run_number: int, log_dir: Path) -> tuple[bool, float | N
 def main():
     parser = argparse.ArgumentParser(description="Run ELO consistency tests")
     parser.add_argument(
-        "game",
-        choices=["count21", "connect4", "othello", "all"],
-        help="Game to test (or 'all' for all games)"
+        "game", choices=["count21", "connect4", "othello", "all"], help="Game to test (or 'all' for all games)"
     )
-    parser.add_argument(
-        "--runs",
-        type=int,
-        default=5,
-        help="Number of test runs per game (default: 5)"
-    )
+    parser.add_argument("--runs", type=int, default=5, help="Number of test runs per game (default: 5)")
 
     args = parser.parse_args()
 
@@ -161,7 +154,7 @@ def main():
             avg_improvement = sum(r["improvements"]) / len(r["improvements"])
             min_improvement = min(r["improvements"])
             max_improvement = max(r["improvements"])
-            print(f"  ELO improvements:")
+            print("  ELO improvements:")
             print(f"    Average: {avg_improvement:+.1f}")
             print(f"    Range: {min_improvement:+.1f} to {max_improvement:+.1f}")
 
