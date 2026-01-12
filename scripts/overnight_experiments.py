@@ -21,6 +21,8 @@ import numpy as np
 
 from rgi.rgizero.experiment import ExperimentConfig, ExperimentRunner
 from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator, AsyncNetworkEvaluator
+from rgi.rgizero.models.action_history_transformer import ActionHistoryTransformer
+from rgi.rgizero.models.transformer import TransformerConfig
 from rgi.rgizero.players.alphazero import AlphazeroPlayer
 from rgi.rgizero.tournament import Tournament
 

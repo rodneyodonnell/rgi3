@@ -58,7 +58,7 @@ class Vocab:
                 # Try to parse as tuple
                 try:
                     itos.append(eval(item))  # Safe since we control the format
-                except:
+                except (SyntaxError, ValueError, NameError):
                     itos.append(item)
             else:
                 itos.append(item)

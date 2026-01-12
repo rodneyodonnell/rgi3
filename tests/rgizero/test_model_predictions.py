@@ -106,8 +106,8 @@ async def test_model_predictions_vs_training_data(temp_experiment_dir, minimal_t
 
     print(f"\nAnalyzing {len(trajectories)} trajectories...")
 
-    # Create evaluator
-    evaluator_gen0 = ActionHistoryTransformerEvaluator(
+    # Create evaluators (for future use in detailed prediction checks)
+    _evaluator_gen0 = ActionHistoryTransformerEvaluator(
         model_gen0,
         device=runner.device,
         block_size=runner.n_max_context,
@@ -115,7 +115,7 @@ async def test_model_predictions_vs_training_data(temp_experiment_dir, minimal_t
         verbose=False,
     )
 
-    evaluator_final = ActionHistoryTransformerEvaluator(
+    _evaluator_final = ActionHistoryTransformerEvaluator(
         model_final,
         device=runner.device,
         block_size=runner.n_max_context,
@@ -123,39 +123,9 @@ async def test_model_predictions_vs_training_data(temp_experiment_dir, minimal_t
         verbose=False,
     )
 
-    # Analyze predictions vs actual outcomes
-    gen0_errors = []
-    final_errors = []
-
-    for traj in trajectories[:100]:  # Sample for speed
-        # Get actual outcome (value for player 1)
-        actual_value_p1 = float(traj.value[0, 0])  # Player 1's value from training data
-
-        # Get model prediction
-        # We need to reconstruct the game state
-        actions = traj.action.tolist()
-
-        # Skip if too short
-        if len(actions) < 2:
-            continue
-
-        # Create a mock state with the action history
-        class MockState:
-            def __init__(self, action_history):
-                self.action_history = tuple(action_history)
-
-        # Decode actions back to tokens
-        action_tokens = [runner.action_vocab.itos[idx] for idx in actions[:-1]]  # Exclude last for prediction
-        state = MockState(action_tokens)
-
-        # Get predictions from both models
-        # (We're simplifying here - in reality we'd need legal actions, but for value prediction we can skip that)
-        try:
-            # This is a simplified version - in production you'd need the full game state
-            # For now, we're just checking if the model is learning *something*
-            pass  # Skip detailed prediction check for now
-        except:
-            continue
+    # NOTE: Detailed prediction analysis is disabled for now
+    # This test currently only validates that training completes successfully
+    # Future work: implement full prediction vs actual outcome analysis
 
     # Simplified check: Compare final model's loss to gen0's loss
     # A better model should have lower loss on the same data

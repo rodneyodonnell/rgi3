@@ -50,6 +50,10 @@ line-length = 120
 target-version = "py313"
 extend-exclude = [
   "src/rgi/nanogpt/fork/**",
+  "experiments/**",
+  "data/**",
+  "models/**",
+  "notebooks/rgizero-e2e-smoketest.ipynb",  # Contains intentional STOP! marker
 ]
 extend-include = ["*.ipynb"]
 
@@ -60,12 +64,14 @@ exclude = ["*.ipynb"]
 # Ignore common notebook issues
 "*.ipynb" = [
     "E402",  # module-import-not-at-top-of-file
+    "E999",  # syntax-error (notebooks may have intentional markers)
     "F401",  # unused-import
     "F811",  # redefined-while-unused
+    "F821",  # undefined-name (notebooks run cells out of order)
     "E731",  # lambda-assignment
     "F541",  # f-string without any placeholders
     "E701",  # multiple statements on one line
-    "F841",  # local variable `results` is assigned to but never used
+    "F841",  # local variable is assigned to but never used
 ]
 
 

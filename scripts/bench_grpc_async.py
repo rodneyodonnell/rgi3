@@ -448,7 +448,7 @@ def main():
             w_id, n_games = result_queue.get(timeout=300)
             total_games += n_games
             print(f"Worker {w_id} done")
-        except:
+        except Exception:
             print("Worker timeout")
 
     duration = time.time() - start_time

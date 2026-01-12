@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from rgi.rgizero.experiment import ExperimentConfig, ExperimentRunner
@@ -16,8 +18,6 @@ def config():
         num_generations=5,
         num_games_per_gen=10,
         num_simulations=5,
-        model_size="tiny",
-        train_batch_size=4,
     )
 
 
@@ -30,8 +30,8 @@ def test_config_serialization(config):
 def test_runner_init_directories(base_dir, config):
     runner = ExperimentRunner(config, base_dir)
 
-    assert (base_dir / "test_exp" / "data").exists()
-    assert (base_dir / "test_exp" / "models").exists()
+    assert runner.data_dir.exists()
+    assert runner.models_dir.exists()
     assert (base_dir / "test_exp" / "config.json").exists()
 
 
@@ -92,6 +92,3 @@ def test_path_resolution_local_override(base_dir, config):
     # Should prefer local if it exists
     p1 = runner.get_trajectory_path(1)
     assert p1 == local_dir / "gen-1"
-
-
-import os

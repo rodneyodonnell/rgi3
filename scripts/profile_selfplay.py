@@ -49,7 +49,7 @@ class ResourceMonitor:
 
                 pynvml.nvmlInit()
                 self.handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            except:
+            except (ImportError, Exception):
                 self.can_monitor_gpu = False
         elif device == "mps":
             # MPS doesn't have easy monitoring, we'll use torch.mps if available
@@ -79,7 +79,7 @@ class ResourceMonitor:
 
                         util = pynvml.nvmlDeviceGetUtilizationRates(self.handle)
                         self.gpu_samples.append(util.gpu)
-                    except:
+                    except (ImportError, Exception):
                         pass
                 elif self.device == "mps":
                     # MPS monitoring is limited, just track if memory is allocated
@@ -195,7 +195,7 @@ async def profile_selfplay(game_name: str, num_games: int, num_simulations: int 
 
         from tqdm.asyncio import tqdm
 
-        results = await tqdm.gather(*tasks, desc="Self-play")
+        await tqdm.gather(*tasks, desc="Self-play")
 
     finally:
         await async_evaluator.stop()
@@ -248,7 +248,6 @@ async def profile_selfplay(game_name: str, num_games: int, num_simulations: int 
     print(f"  Mean evals/sec: {async_evaluator.stats['mean_evals_per_sec']:.1f}")
 
     # Estimate time breakdown
-    total_mcts_sims = num_games * 2 * num_simulations  # 2 players per game
     estimated_nn_time = async_evaluator.stats["total_evals"] / async_evaluator.stats["mean_evals_per_sec"]
     mcts_time = elapsed - estimated_nn_time
 
