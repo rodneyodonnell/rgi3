@@ -24,7 +24,7 @@ class TrainConfig:
 
     # Logging
     eval_interval: int = 2000
-    log_interval: int = 1
+    log_interval: int = 100
     eval_iters: int = 200
     eval_only: bool = False  # if True, script exits right after the first eval
     always_save_checkpoint: bool = True  # if True, always save a checkpoint after each eval
@@ -58,11 +58,18 @@ class TrainConfig:
     # dtype: str = "float16"
     dtype: str = "bfloat16"
     compile: bool = False
+    early_stop_patience: int = 5  # Early stopping patience
 
 
 class Trainer:
     def __init__(
-        self, model: nn.Module, train_config: TrainConfig, train_loader: DataLoader, val_loader: DataLoader, device: str
+        self,
+        model: nn.Module,
+        train_config: TrainConfig,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        device: str,
+        model_dir: str | None = None,
     ):
         self.model = model
         self.train_config = train_config
@@ -89,8 +96,13 @@ class Trainer:
                 project=self.train_config.wandb_project, name=self.train_config.wandb_run_name, config=self.model_config
             )
         self.ctx = transformer_common.get_ctx(self.train_config.dtype, self.device)
-        self.model_dir = transformer_common.model_dir(self.train_config.model_name, self.train_config.model_version)
+        if model_dir:
+            self.model_dir = model_dir
+        else:
+            self.model_dir = transformer_common.model_dir(self.train_config.model_name, self.train_config.model_version)
         os.makedirs(self.model_dir, exist_ok=True)
+        self.no_improve_count = 0
+        self.early_stop = False
 
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
@@ -135,8 +147,15 @@ class Trainer:
         for epoch_id in range(self.train_config.max_epochs):
             self.train_epoch(epoch_id)
             # termination conditions
-            if self.iter_num > self.train_config.max_iters:
+            if self.iter_num > self.train_config.max_iters or self.early_stop:
                 break
+
+        # Reload best model if we saved one
+        best_path = os.path.join(self.model_dir, "best.pt")
+        if os.path.exists(best_path):
+            print(f"Reloading best model from {best_path} (val_loss={self.best_val_loss:.4f})")
+            checkpoint = torch.load(best_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint["model"])
 
     def train_epoch(self, epoch_id):
         self.model.train()
@@ -153,14 +172,35 @@ class Trainer:
                 param_group["lr"] = lr
 
             # evaluate the loss on train/val sets and write checkpoints
-            if self.iter_num % self.train_config.eval_interval == 0:
+            if (self.iter_num % self.train_config.eval_interval == 0) or (self.iter_num + 1 == max_iters):
                 losses = self.estimate_loss()
                 loss_str = ", ".join(f"{k}:{v:.4f}" for k, v in losses.items())
                 print(f"step {self.iter_num}: losses: {loss_str}")
                 if self.train_config.wandb_log:
                     wandb.log({"iter": self.iter_num, "lr": lr, **losses})
-                if losses["val"] < self.best_val_loss or self.train_config.always_save_checkpoint:
+                if losses["val"] < self.best_val_loss:
                     self.best_val_loss = losses["val"]
+                    self.no_improve_count = 0
+
+                    checkpoint = {
+                        "model": self.model.state_dict(),
+                        "optimizer": self.optimizer.state_dict(),
+                        "model_args": "model_args",
+                        "iter_num": self.iter_num,
+                        "best_val_loss": self.best_val_loss,
+                    }
+                    print(f"saving best checkpoint to {self.model_dir}/best.pt")
+                    torch.save(checkpoint, os.path.join(self.model_dir, "best.pt"))
+                else:
+                    self.no_improve_count += 1
+                    if self.no_improve_count >= self.train_config.early_stop_patience:
+                        print(
+                            f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals."
+                        )
+                        self.early_stop = True
+                        break
+
+                if self.train_config.always_save_checkpoint:
                     if self.iter_num > 0:
                         checkpoint = {
                             "model": self.model.state_dict(),
