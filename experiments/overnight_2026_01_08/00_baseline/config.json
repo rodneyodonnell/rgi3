@@ -1,0 +1,33 @@
+{
+  "name": "00_baseline",
+  "description": "Baseline with default config",
+  "num_games_per_gen": 500,
+  "num_simulations": 50,
+  "num_generations": 4,
+  "training_args": {
+    "n_layer": 2,
+    "n_head": 4,
+    "n_embd": 32,
+    "n_max_context": 100,
+    "dropout": 0.1,
+    "bias": false,
+    "batch_size": 32,
+    "gradient_accumulation_steps": 1,
+    "max_iters": 5000,
+    "max_epochs": 50,
+    "learning_rate": 0.0005,
+    "decay_lr": true,
+    "min_lr": 5e-05,
+    "lr_decay_iters": 5000,
+    "warmup_iters": 100,
+    "weight_decay": 0.01,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+    "dtype": "float32",
+    "eval_iters": 20,
+    "log_interval": 50,
+    "eval_interval": 50,
+    "early_stop_patience": 20
+  }
+}

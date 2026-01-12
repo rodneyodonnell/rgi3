@@ -1,0 +1,58 @@
+[
+  {
+    "name": "00_baseline",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/00_baseline/00_baseline/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  },
+  {
+    "name": "01_higher_lr",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/01_higher_lr/01_higher_lr/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  },
+  {
+    "name": "02_more_sims",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/02_more_sims/02_more_sims/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  },
+  {
+    "name": "03_bigger_model",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/03_bigger_model/03_bigger_model/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  },
+  {
+    "name": "04_more_gens",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/04_more_gens/04_more_gens/models/gen-6.pt",
+    "generations": 6,
+    "skipped": true
+  },
+  {
+    "name": "05_lower_dropout",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/05_lower_dropout/05_lower_dropout/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  },
+  {
+    "name": "06_combined",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/06_combined/06_combined/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  },
+  {
+    "name": "07_even_bigger",
+    "elapsed": 0,
+    "model_path": "/Users/rodo/src/rgi3-claude/experiments/overnight_2026_01_08/07_even_bigger/07_even_bigger/models/gen-4.pt",
+    "generations": 4,
+    "skipped": true
+  }
+]

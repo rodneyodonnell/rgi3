@@ -1,0 +1,12 @@
+{
+  "experiment_name": "02_more_sims",
+  "game_name": "othello",
+  "num_generations": 4,
+  "num_games_per_gen": 300,
+  "num_simulations": 100,
+  "parent_experiment_name": null,
+  "parent_generation_cap": null,
+  "seed": 42,
+  "training_window_size": 10,
+  "use_grpc": false
+}
