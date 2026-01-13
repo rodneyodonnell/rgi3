@@ -23,6 +23,68 @@ uv sync
 
 TODO: Add notebook showing this.
 
+## Training Models
+
+Train AlphaZero-style models for N generations with automatic ELO evaluation to track improvement.
+
+### Quick Training Run
+
+Train a model across multiple generations and see ELO progression:
+
+```bash
+# Train Connect4 for 20 generations
+uv run python scripts/train_long_experiment.py --game connect4 --generations 20 --games-per-gen 150
+
+# Train Othello for 15 generations
+uv run python scripts/train_long_experiment.py --game othello --generations 15 --games-per-gen 200
+
+# Quick test with small config
+uv run python scripts/train_long_experiment.py --game count21 --generations 10 --games-per-gen 100
+```
+
+**What it does:**
+- Trains for N generations using self-play
+- Saves all generation models to `experiments/long_run/<game>/models/`
+- Runs round-robin ELO tournament at the end
+- Evaluates every 5th generation + final generation (configurable with `--tournament-interval`)
+- Shows ELO progression from Gen 0 (random baseline) to final model
+- Validates that training is working by comparing against random play
+
+### Training Scripts
+
+The repository includes several training scripts:
+
+1. **`scripts/train_long_experiment.py`** - Main training script with ELO evaluation
+   - Supports: `count21`, `connect4`, `othello`
+   - Configurable generations, games per generation, MCTS simulations
+   - Full ELO tournament at end with progression analysis
+
+2. **`scripts/train_connect4_60min.py`** - Time-limited Connect4 training
+   - Stops after specified time limit (default: 60 minutes)
+   - Periodic ELO checks during training (every N generations)
+   - Useful for quick experiments with time constraints
+
+3. **`scripts/overnight_experiments.py`** - Multi-variant hyperparameter search
+   - Runs multiple experiment configurations automatically
+   - Compares different model sizes, learning rates, etc.
+   - Maintains incremental ELO rankings across all variants
+
+### Example Output
+
+After training completes, you'll see ELO progression analysis:
+
+```
+ELO PROGRESSION ANALYSIS
+================================================================================
+Gen  0: ELO= 1000.0, Games= 40, Wins= 12 (RANDOM BASELINE)
+Gen  5: ELO= 1089.3, Games= 40, Wins= 18
+Gen 10: ELO= 1156.7, Games= 40, Wins= 23
+Gen 15: ELO= 1203.2, Games= 40, Wins= 27 ⭐ BEST MODEL
+
+Improvement from Gen 0 to Gen 15: +203.2 ELO
+✓ Final model beats random baseline by 203.2 ELO
+```
+
 ## Supported Games
 
 -   Connect4
