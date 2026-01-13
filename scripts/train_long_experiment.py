@@ -34,7 +34,7 @@ DEFAULT_TRAINING_ARGS = {
     # Training parameters
     "batch_size": 32,
     "gradient_accumulation_steps": 1,
-    "max_iters": 2000,
+    "max_iters": 100000,
     "max_epochs": 20,
     "learning_rate": 0.003,
     "decay_lr": True,
