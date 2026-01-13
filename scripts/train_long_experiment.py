@@ -12,6 +12,7 @@ Usage:
 
 import asyncio
 import argparse
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -21,6 +22,26 @@ from rgi.rgizero.experiment import ExperimentConfig, ExperimentRunner
 from rgi.rgizero.evaluators import ActionHistoryTransformerEvaluator, AsyncNetworkEvaluator
 from rgi.rgizero.players.alphazero import AlphazeroPlayer
 from rgi.rgizero.tournament import Tournament
+
+
+class TeeOutput:
+    """Write to both stdout and a file."""
+
+    def __init__(self, file_path, mode="w"):
+        self.file = open(file_path, mode)
+        self.stdout = sys.stdout
+
+    def write(self, data):
+        self.stdout.write(data)
+        self.file.write(data)
+        self.file.flush()  # Ensure logs are written immediately
+
+    def flush(self):
+        self.stdout.flush()
+        self.file.flush()
+
+    def close(self):
+        self.file.close()
 
 
 DEFAULT_TRAINING_ARGS = {
@@ -132,10 +153,17 @@ async def main():
     )
     parser.add_argument("--tournament-interval", type=int, default=5, help="Run tournament every N generations")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--training-window-size",
+        type=int,
+        default=10,
+        help="Number of recent generations to train on (default: 10, use 0 or negative for all data)",
+    )
 
     args = parser.parse_args()
 
     # Create experiment config
+    training_window = args.training_window_size if args.training_window_size > 0 else None
     config = ExperimentConfig(
         experiment_name=f"long-{args.game}",
         game_name=args.game,
@@ -143,100 +171,118 @@ async def main():
         num_games_per_gen=args.games_per_gen,
         num_simulations=args.simulations,
         seed=args.seed,
+        training_window_size=training_window,
     )
 
-    # Create runner
-    runner = ExperimentRunner(
-        config=config,
-        base_dir=args.output_dir,
-        training_args=DEFAULT_TRAINING_ARGS,
-        progress_bar=True,
-    )
+    # Set up logging to file
+    log_file = args.output_dir / f"{config.experiment_name}_training.log"
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    tee = TeeOutput(log_file)
+    original_stdout = sys.stdout
+    sys.stdout = tee
 
-    print("=" * 80)
-    print(f"Long Training Experiment: {args.game.upper()}")
-    print("=" * 80)
-    print(f"Generations: {args.generations}")
-    print(f"Games per generation: {args.games_per_gen}")
-    print(f"MCTS simulations: {args.simulations}")
-    print(f"Output directory: {args.output_dir}")
-    print(f"Tournament every: {args.tournament_interval} generations")
-    print("=" * 80)
-    print()
+    try:
+        # Create runner
+        runner = ExperimentRunner(
+            config=config,
+            base_dir=args.output_dir,
+            training_args=DEFAULT_TRAINING_ARGS,
+            progress_bar=True,
+        )
 
-    # Run training
-    print("Starting training...")
-    await runner.run_async()
-    print(f"✓ Training completed for {args.generations} generations")
-    print()
+        print("=" * 80)
+        print(f"Long Training Experiment: {args.game.upper()}")
+        print("=" * 80)
+        print(f"Logging to: {log_file}")
+        print("=" * 80)
+        print(f"Generations: {args.generations}")
+        print(f"Games per generation: {args.games_per_gen}")
+        print(f"MCTS simulations: {args.simulations}")
+        print(f"Output directory: {args.output_dir}")
+        print(f"Tournament every: {args.tournament_interval} generations")
+        print(f"Training window size: {args.training_window_size} ({'all data' if training_window is None else f'last {args.training_window_size} gens'})")
+        print("=" * 80)
+        print()
 
-    # Run tournament evaluation
-    print("=" * 80)
-    print("TOURNAMENT EVALUATION")
-    print("=" * 80)
+        # Run training
+        print("Starting training...")
+        await runner.run_async()
+        print(f"✓ Training completed for {args.generations} generations")
+        print()
 
-    # Determine which generations to evaluate
-    # Include: Gen 0 (random), every tournament_interval generations, and final generation
-    eval_gens = set([0])  # Always include random baseline
-    for gen in range(args.tournament_interval, args.generations + 1, args.tournament_interval):
-        eval_gens.add(gen)
-    eval_gens.add(args.generations)  # Always include final
-    eval_gens = sorted(eval_gens)
+        # Run tournament evaluation
+        print("=" * 80)
+        print("TOURNAMENT EVALUATION")
+        print("=" * 80)
 
-    print(f"Evaluating generations: {eval_gens}")
-    print()
+        # Determine which generations to evaluate
+        # Include: Gen 0 (random), every tournament_interval generations, and final generation
+        eval_gens = set([0])  # Always include random baseline
+        for gen in range(args.tournament_interval, args.generations + 1, args.tournament_interval):
+            eval_gens.add(gen)
+        eval_gens.add(args.generations)  # Always include final
+        eval_gens = sorted(eval_gens)
 
-    # Run tournament
-    tournament = await run_tournament_evaluation(
-        runner,
-        eval_gens,
-        num_games=len(eval_gens) * 20,  # Scale with number of players
-        concurrent_games=10,
-    )
+        print(f"Evaluating generations: {eval_gens}")
+        print()
 
-    # Print results
-    print()
-    print("=" * 80)
-    print("FINAL RESULTS")
-    print("=" * 80)
-    tournament.print_standings()
+        # Run tournament
+        tournament = await run_tournament_evaluation(
+            runner,
+            eval_gens,
+            num_games=len(eval_gens) * 20,  # Scale with number of players
+            concurrent_games=10,
+        )
 
-    # Analyze progression
-    print()
-    print("=" * 80)
-    print("ELO PROGRESSION ANALYSIS")
-    print("=" * 80)
+        # Print results
+        print()
+        print("=" * 80)
+        print("FINAL RESULTS")
+        print("=" * 80)
+        tournament.print_standings()
 
-    elo_by_gen = {}
-    for gen_id in eval_gens:
-        elo = tournament.stats[f"gen_{gen_id}"].elo
-        games = tournament.stats[f"gen_{gen_id}"].games_played
-        wins = tournament.stats[f"gen_{gen_id}"].wins
-        elo_by_gen[gen_id] = elo
+        # Analyze progression
+        print()
+        print("=" * 80)
+        print("ELO PROGRESSION ANALYSIS")
+        print("=" * 80)
 
-        indicator = ""
-        if gen_id == 0:
-            indicator = " (RANDOM BASELINE)"
-        elif elo == max(elo_by_gen.values()):
-            indicator = " ⭐ BEST MODEL"
+        elo_by_gen = {}
+        for gen_id in eval_gens:
+            elo = tournament.stats[f"gen_{gen_id}"].elo
+            games = tournament.stats[f"gen_{gen_id}"].games_played
+            wins = tournament.stats[f"gen_{gen_id}"].wins
+            elo_by_gen[gen_id] = elo
 
-        print(f"Gen {gen_id:2d}: ELO={elo:7.1f}, Games={games:3d}, Wins={wins:3d}{indicator}")
+            indicator = ""
+            if gen_id == 0:
+                indicator = " (RANDOM BASELINE)"
+            elif elo == max(elo_by_gen.values()):
+                indicator = " ⭐ BEST MODEL"
 
-    # Check improvement
-    gen0_elo = elo_by_gen[0]
-    final_elo = elo_by_gen[args.generations]
-    improvement = final_elo - gen0_elo
+            print(f"Gen {gen_id:2d}: ELO={elo:7.1f}, Games={games:3d}, Wins={wins:3d}{indicator}")
 
-    print()
-    print(f"Improvement from Gen 0 to Gen {args.generations}: {improvement:+.1f} ELO")
+        # Check improvement
+        gen0_elo = elo_by_gen[0]
+        final_elo = elo_by_gen[args.generations]
+        improvement = final_elo - gen0_elo
 
-    if final_elo > gen0_elo:
-        print(f"✓ Final model beats random baseline by {improvement:.1f} ELO")
-    else:
-        print(f"⚠ Final model is {-improvement:.1f} ELO worse than random - training may have failed")
+        print()
+        print(f"Improvement from Gen 0 to Gen {args.generations}: {improvement:+.1f} ELO")
 
-    print()
-    print(f"Results saved to: {args.output_dir / config.experiment_name}")
+        if final_elo > gen0_elo:
+            print(f"✓ Final model beats random baseline by {improvement:.1f} ELO")
+        else:
+            print(f"⚠ Final model is {-improvement:.1f} ELO worse than random - training may have failed")
+
+        print()
+        print(f"Results saved to: {args.output_dir / config.experiment_name}")
+
+    finally:
+        # Restore stdout and close log file
+        sys.stdout = original_stdout
+        tee.close()
+        print(f"Log saved to: {log_file}")
 
 
 if __name__ == "__main__":
