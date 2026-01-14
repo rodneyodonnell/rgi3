@@ -161,6 +161,7 @@ async def main():
     print(f"MCTS simulations: {args.simulations}")
     print(f"Output directory: {args.output_dir}")
     print(f"Tournament every: {args.tournament_interval} generations")
+    print(f"Device: {runner.device}")
     print("=" * 80)
     print()
 
