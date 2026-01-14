@@ -474,12 +474,25 @@ class ExperimentRunner:
         # Get all training data locations (handling forks)
         dataset_paths = self.get_trajectory_paths(gen_id)
 
+        # Adjust learning rate for fine-tuning vs initial training
+        # When fine-tuning (gen_id > 0), use a lower initial learning rate
+        train_config_dict = self.train_config_dict.copy()
+        is_finetuning = gen_id > 0
+
+        if is_finetuning and 'learning_rate' in train_config_dict:
+            original_lr = train_config_dict['learning_rate']
+            finetuning_lr = original_lr / 3.0  # Use 1/3 of original LR for fine-tuning
+            train_config_dict['learning_rate'] = finetuning_lr
+            if 'min_lr' in train_config_dict:
+                train_config_dict['min_lr'] = train_config_dict['min_lr'] / 3.0
+            print(f"Fine-tuning mode: Reduced learning_rate from {original_lr} to {finetuning_lr}")
+
         # Train Config
         train_config = TrainConfig(
             model_name=f"{self.config.experiment_name}",
             model_version=f"gen-{gen_id}",
             device=self.device,
-            **self.train_config_dict,
+            **train_config_dict,
         )
 
         from rgi.rgizero.train import Trainer
@@ -502,10 +515,29 @@ class ExperimentRunner:
             model_dir=str(self.models_dir / train_config.model_version),
         )
 
+        # Measure initial validation loss before training
+        if is_finetuning:
+            initial_losses = trainer.estimate_loss()
+            initial_val_loss = initial_losses['val']
+            print(f"Initial validation loss: {initial_val_loss:.4f}")
+
         trainer.train()
 
         elapsed = time.time() - start_time
         print(f"Training completed in {elapsed:.1f}s")
+
+        # Check if fine-tuning made any improvement
+        if is_finetuning:
+            final_val_loss = trainer.best_val_loss
+            if final_val_loss >= initial_val_loss:
+                raise RuntimeError(
+                    f"Fine-tuning failed to improve validation loss!\n"
+                    f"  Initial val_loss: {initial_val_loss:.4f}\n"
+                    f"  Best val_loss:    {final_val_loss:.4f}\n"
+                    f"  Change:          {final_val_loss - initial_val_loss:+.4f}\n"
+                    f"This indicates a problem with the training configuration or data."
+                )
+            print(f"Fine-tuning improved val_loss by {initial_val_loss - final_val_loss:.4f}")
 
         self.save_model(model, gen_id, {"final_loss": trainer.estimate_loss()})
 
