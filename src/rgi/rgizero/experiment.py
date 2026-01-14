@@ -312,6 +312,9 @@ class ExperimentRunner:
         from rgi.rgizero.serving.selfplay_worker import run_selfplay_worker
         from rgi.rgizero.serving.inference_server import run_server_process
 
+        # Use spawn context to support CUDA
+        ctx = mp.get_context("spawn")
+
         # Configuration
         num_workers = min(8, mp.cpu_count())  # Use up to 8 workers
         games_per_worker = self.config.num_games_per_gen // num_workers
@@ -325,10 +328,10 @@ class ExperimentRunner:
 
         # Start inference server in subprocess
         port = 50051 + gen_id  # Different port per generation
-        ready_event = mp.Event()
-        stop_event = mp.Event()
+        ready_event = ctx.Event()
+        stop_event = ctx.Event()
 
-        server_process = mp.Process(
+        server_process = ctx.Process(
             target=run_server_process,
             args=(model_path, self.config.game_name, port, ready_event, stop_event, False),
             daemon=True,  # Auto-kill if parent dies
@@ -342,7 +345,7 @@ class ExperimentRunner:
 
         try:
             # Start worker processes
-            result_queue = mp.Queue()
+            result_queue = ctx.Queue()
             workers = []
             vocab_tokens = self.action_vocab.itos  # Pass vocab as list of tokens
             master_rng = np.random.default_rng(self.config.seed + gen_id)
@@ -354,7 +357,7 @@ class ExperimentRunner:
                     continue
 
                 worker_seed = master_rng.integers(0, 2**31)
-                p = mp.Process(
+                p = ctx.Process(
                     target=run_selfplay_worker,
                     args=(
                         worker_id,
