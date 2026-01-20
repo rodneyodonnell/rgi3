@@ -35,8 +35,8 @@ Train a model across multiple generations and see ELO progression:
 # Train Connect4 for 20 generations
 uv run python scripts/train_long_experiment.py --game connect4 --generations 20 --games-per-gen 150
 
-# Train Othello for 15 generations
-uv run python scripts/train_long_experiment.py --game othello --generations 15 --games-per-gen 200
+# Train Othello for 20 generations
+uv run python scripts/train_long_experiment.py --game othello --generations 20 --games-per-gen 5000 --tournament-interval=2 --use-grpc --output-dir=experiments/othello-v3
 
 # Quick test with small config
 uv run python scripts/train_long_experiment.py --game count21 --generations 10 --games-per-gen 100

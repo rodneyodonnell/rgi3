@@ -101,6 +101,9 @@ def run_selfplay_worker(
                     legal_actions_list = [item[1] for item in batch]
                     futures = [item[2] for item in batch]
 
+                    # Pre-calculate encoded actions to avoid duplicate work and for remapping later
+                    encoded_actions_list = [np.array(vocab.encode(actions), dtype=np.int64) for actions in legal_actions_list]
+
                     # Encode
                     B = len(batch)
                     encoded_rows = [vocab.encode(s.action_history) for s in states]
@@ -117,10 +120,10 @@ def run_selfplay_worker(
                     # Build legal mask
                     legal_mask = np.zeros((B, vocab_size), dtype=np.bool_)
                     num_legal_actions = []
-                    for i, actions in enumerate(legal_actions_list):
-                        encoded_actions = np.array(vocab.encode(actions), dtype=np.int64)
+                    for i, encoded_actions in enumerate(encoded_actions_list):
+                        # encoded_actions = np.array(vocab.encode(actions), dtype=np.int64)
                         legal_mask[i, encoded_actions] = True
-                        num_legal_actions.append(len(actions))
+                        num_legal_actions.append(len(encoded_actions))
 
                     num_legal_np = np.array(num_legal_actions, dtype=np.int32)
 
@@ -149,19 +152,47 @@ def run_selfplay_worker(
                     # Distribute results
                     policy_offset = 0
                     value_offset = 0
-                    for i, (state, legal_actions, future) in enumerate(zip(states, legal_actions_list, futures)):
-                        n_legal = len(legal_actions)
-                        policy = all_policies[policy_offset : policy_offset + n_legal]
+                    for i, (state, encoded_actions, future) in enumerate(zip(states, encoded_actions_list, futures)):
+                        # Server returns policy for SORTED UNIQUE indices (due to mask usage)
+                        # We need to map these back to our original 'encoded_actions' (which may be unsorted/duplicated)
+                        
+                        # 1. Identify which indices were valid for this sample
+                        # The server logic is: legal_indices = np.where(mask)[0]
+                        # So the returned policy corresponds to these sorted unique indices.
+                        unique_indices = np.unique(encoded_actions) # np.unique returns sorted unique elements
+                        n_unique = len(unique_indices)
+                        
+                        # Extract the cloud of policy values for this sample
+                        # Note: The server returns values for ALL set bits in the mask.
+                        # If our 'encoded_actions' had duplicates, n_unique < len(encoded_actions)
+                        # But 'policy' slice from server has length == n_unique (because it's based on mask)
+                        
+                        policy_subset = all_policies[policy_offset : policy_offset + n_unique]
                         values = all_values[value_offset : value_offset + num_players]
 
+                        # 2. Map sorted unique indices to the values
+                        # We create a mapping: vocab_idx -> policy_value
+                        # Since unique_indices are sorted, they map 1:1 to policy_subset
+                        
+                        # Fast lookup using array if vocab is small, or dict if large/sparse.
+                        # Here we use a dense lookup for speed since vocab is ~4000.
+                        # We only need to populate the relevant entries.
+                        # To avoid allocating a full vocab-sized array every time, we can use a dict or just smart indexing.
+                        # For duplicates/reordering:
+                        
+                        vocab_to_value = {idx: val for idx, val in zip(unique_indices, policy_subset)}
+                        
+                        # 3. Reconstruct full ordered policy
+                        legal_policy = np.array([vocab_to_value[idx] for idx in encoded_actions], dtype=np.float32)
+
                         result = NetworkEvaluatorResult(
-                            legal_policy=policy,
+                            legal_policy=legal_policy,
                             player_values=values,
                         )
                         if not future.done():
                             future.set_result(result)
 
-                        policy_offset += n_legal
+                        policy_offset += n_unique
                         value_offset += num_players
 
         evaluator = AsyncGrpcEvaluator()

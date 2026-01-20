@@ -376,10 +376,13 @@ class ExperimentRunner:
                 workers.append(p)
 
             # Collect results from all workers
+            from tqdm import tqdm
             all_results = []
-            for _ in workers:
-                worker_id, results = result_queue.get()
-                all_results.extend(results)
+            with tqdm(total=self.config.num_games_per_gen, desc="Self Play", disable=not self.progress_bar) as pbar:
+                for _ in workers:
+                    worker_id, results = result_queue.get()
+                    all_results.extend(results)
+                    pbar.update(len(results))
 
             # Wait for workers to finish
             for p in workers:

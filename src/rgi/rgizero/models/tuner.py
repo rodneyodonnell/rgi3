@@ -46,8 +46,8 @@ transform_config_fields = {f.name for f in dataclasses.fields(TransformerConfig)
 train_config_fields = {f.name for f in dataclasses.fields(TrainConfig)}
 other_config_fields = {"last_file"}
 
-print(f"transform_config_fields: {transform_config_fields}")
-print(f"train_config_fields: {train_config_fields}")
+# print(f"transform_config_fields: {transform_config_fields}")
+# print(f"train_config_fields: {train_config_fields}")
 
 
 def create_random_model(config: TransformerConfig, action_vocab_size, num_players, seed: int, device: str):

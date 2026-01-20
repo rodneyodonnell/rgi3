@@ -166,8 +166,8 @@ class ActionHistoryTransformerEvaluator(NetworkEvaluator):
 
         # Extract results
         ret = []
-        for i, (policy_np, value_np, mask) in enumerate(zip(policy_np_batch, value_np_batch, legal_mask)):
-            legal_policy = policy_np[mask]
+        for i, (policy_np, value_np, indices) in enumerate(zip(policy_np_batch, value_np_batch, legal_indices)):
+            legal_policy = policy_np[indices]
             ret.append(NetworkEvaluatorResult(legal_policy, value_np))
 
         t1 = time.time()
