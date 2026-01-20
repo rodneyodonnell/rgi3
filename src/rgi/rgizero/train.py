@@ -106,6 +106,10 @@ class Trainer:
         self.early_stop = False
         self.seen_first_eval_after_iter0 = False  # Track if we've seen first eval after training started
 
+    def _prepare_batch(self, batch):
+        """Move batch to device."""
+        return [t.to(self.device, non_blocking=True) for t in batch]
+
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
     def estimate_loss(self):
@@ -118,6 +122,7 @@ class Trainer:
             eval_iters = min(self.train_config.eval_iters, len(loader))
             for k in range(eval_iters):
                 data_batch = next(data_iter)
+                data_batch = self._prepare_batch(data_batch)
                 with self.ctx:
                     logits, loss_dict, loss = self.model(*data_batch)
                 loss_sums[split] += loss.item()
@@ -266,6 +271,7 @@ class Trainer:
             for micro_step in range(self.train_config.gradient_accumulation_steps):
                 with self.ctx:
                     batch_id, data_batch = next(data_iter)
+                    data_batch = self._prepare_batch(data_batch)
                     logits, loss_dict, loss = self.model(*data_batch)
                     loss = (
                         loss / self.train_config.gradient_accumulation_steps

@@ -153,7 +153,7 @@ async def main():
     )
     parser.add_argument("--tournament-interval", type=int, default=5, help="Run tournament every N generations")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--use-grpc", action="store_true", help="Use gRPC for multiprocessing self play")
+    parser.add_argument("--use-grpc", action="store_true", help="Use gRPC for multiprocessing self-play")
     parser.add_argument(
         "--training-window-size",
         type=int,
@@ -191,7 +191,6 @@ async def main():
             training_args=DEFAULT_TRAINING_ARGS,
             progress_bar=True,
         )
-
         print("=" * 80)
         print(f"Long Training Experiment: {args.game.upper()}")
         print("=" * 80)
@@ -205,6 +204,7 @@ async def main():
         print(
             f"Training window size: {args.training_window_size} ({'all data' if training_window is None else f'last {args.training_window_size} gens'})"
         )
+        print(f"Device: {runner.device}")
         print("=" * 80)
         print()
 
