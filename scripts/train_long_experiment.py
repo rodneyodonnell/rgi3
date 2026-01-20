@@ -202,7 +202,9 @@ async def main():
         print(f"MCTS simulations: {args.simulations}")
         print(f"Output directory: {args.output_dir}")
         print(f"Tournament every: {args.tournament_interval} generations")
-        print(f"Training window size: {args.training_window_size} ({'all data' if training_window is None else f'last {args.training_window_size} gens'})")
+        print(
+            f"Training window size: {args.training_window_size} ({'all data' if training_window is None else f'last {args.training_window_size} gens'})"
+        )
         print("=" * 80)
         print()
 

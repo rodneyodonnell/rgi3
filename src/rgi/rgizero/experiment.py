@@ -480,12 +480,12 @@ class ExperimentRunner:
         train_config_dict = self.train_config_dict.copy()
         is_finetuning = gen_id > 1
 
-        if is_finetuning and 'learning_rate' in train_config_dict:
-            original_lr = train_config_dict['learning_rate']
+        if is_finetuning and "learning_rate" in train_config_dict:
+            original_lr = train_config_dict["learning_rate"]
             finetuning_lr = original_lr / 3.0  # Use 1/3 of original LR for fine-tuning
-            train_config_dict['learning_rate'] = finetuning_lr
-            if 'min_lr' in train_config_dict:
-                train_config_dict['min_lr'] = train_config_dict['min_lr'] / 3.0
+            train_config_dict["learning_rate"] = finetuning_lr
+            if "min_lr" in train_config_dict:
+                train_config_dict["min_lr"] = train_config_dict["min_lr"] / 3.0
             print(f"Fine-tuning mode: Reduced learning_rate from {original_lr} to {finetuning_lr}")
 
         # Train Config
@@ -519,7 +519,7 @@ class ExperimentRunner:
         # Measure initial validation loss before training
         if is_finetuning:
             initial_losses = trainer.estimate_loss()
-            initial_val_loss = initial_losses['val']
+            initial_val_loss = initial_losses["val"]
             print(f"Initial validation loss: {initial_val_loss:.4f}")
 
         trainer.train()
