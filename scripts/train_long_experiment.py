@@ -232,8 +232,8 @@ async def main():
         tournament = await run_tournament_evaluation(
             runner,
             eval_gens,
-            num_games=len(eval_gens) * 20,  # Scale with number of players
-            concurrent_games=10,
+            num_games=len(eval_gens) * 100,  # Scale with number of players
+            concurrent_games=len(eval_gens) * 4,
         )
 
         # Print results

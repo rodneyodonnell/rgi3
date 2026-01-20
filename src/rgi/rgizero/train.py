@@ -59,6 +59,7 @@ class TrainConfig:
     dtype: str = "bfloat16"
     compile: bool = False
     early_stop_patience: int = 5  # Early stopping patience
+    skip_first_eval_for_early_stop: bool = True  # If True, don't count patience until after first eval post-training
 
 
 class Trainer:
@@ -103,6 +104,7 @@ class Trainer:
         os.makedirs(self.model_dir, exist_ok=True)
         self.no_improve_count = 0
         self.early_stop = False
+        self.seen_first_eval_after_iter0 = False  # Track if we've seen first eval after training started
 
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
@@ -178,27 +180,71 @@ class Trainer:
                 print(f"step {self.iter_num}: losses: {loss_str}")
                 if self.train_config.wandb_log:
                     wandb.log({"iter": self.iter_num, "lr": lr, **losses})
-                if losses["val"] < self.best_val_loss:
-                    self.best_val_loss = losses["val"]
-                    self.no_improve_count = 0
 
-                    checkpoint = {
-                        "model": self.model.state_dict(),
-                        "optimizer": self.optimizer.state_dict(),
-                        "model_args": "model_args",
-                        "iter_num": self.iter_num,
-                        "best_val_loss": self.best_val_loss,
-                    }
-                    print(f"saving best checkpoint to {self.model_dir}/best.pt")
-                    torch.save(checkpoint, os.path.join(self.model_dir, "best.pt"))
+                # Handle skip_first_eval_for_early_stop logic
+                if self.train_config.skip_first_eval_for_early_stop:
+                    if self.iter_num == 0:
+                        # Skip iter 0 evaluation - don't set as best, don't save checkpoint
+                        # Just print the initial baseline for reference
+                        pass
+                    elif not self.seen_first_eval_after_iter0:
+                        # First eval after iter 0 - force save as best baseline (regardless of value)
+                        self.seen_first_eval_after_iter0 = True
+                        self.best_val_loss = losses["val"]
+                        self.no_improve_count = 0
+                        checkpoint = {
+                            "model": self.model.state_dict(),
+                            "optimizer": self.optimizer.state_dict(),
+                            "model_args": "model_args",
+                            "iter_num": self.iter_num,
+                            "best_val_loss": self.best_val_loss,
+                        }
+                        print(f"saving best checkpoint to {self.model_dir}/best.pt")
+                        torch.save(checkpoint, os.path.join(self.model_dir, "best.pt"))
+                    else:
+                        # Normal comparison after first eval
+                        if losses["val"] < self.best_val_loss:
+                            self.best_val_loss = losses["val"]
+                            self.no_improve_count = 0
+                            checkpoint = {
+                                "model": self.model.state_dict(),
+                                "optimizer": self.optimizer.state_dict(),
+                                "model_args": "model_args",
+                                "iter_num": self.iter_num,
+                                "best_val_loss": self.best_val_loss,
+                            }
+                            print(f"saving best checkpoint to {self.model_dir}/best.pt")
+                            torch.save(checkpoint, os.path.join(self.model_dir, "best.pt"))
+                        else:
+                            self.no_improve_count += 1
+                            if self.no_improve_count >= self.train_config.early_stop_patience:
+                                print(
+                                    f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals."
+                                )
+                                self.early_stop = True
+                                break
                 else:
-                    self.no_improve_count += 1
-                    if self.no_improve_count >= self.train_config.early_stop_patience:
-                        print(
-                            f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals."
-                        )
-                        self.early_stop = True
-                        break
+                    # Old behavior - compare all evals including iter 0
+                    if losses["val"] < self.best_val_loss:
+                        self.best_val_loss = losses["val"]
+                        self.no_improve_count = 0
+                        checkpoint = {
+                            "model": self.model.state_dict(),
+                            "optimizer": self.optimizer.state_dict(),
+                            "model_args": "model_args",
+                            "iter_num": self.iter_num,
+                            "best_val_loss": self.best_val_loss,
+                        }
+                        print(f"saving best checkpoint to {self.model_dir}/best.pt")
+                        torch.save(checkpoint, os.path.join(self.model_dir, "best.pt"))
+                    else:
+                        self.no_improve_count += 1
+                        if self.no_improve_count >= self.train_config.early_stop_patience:
+                            print(
+                                f"Early stopping triggered! Valid loss has not improved for {self.no_improve_count} evals."
+                            )
+                            self.early_stop = True
+                            break
 
                 if self.train_config.always_save_checkpoint:
                     if self.iter_num > 0:
