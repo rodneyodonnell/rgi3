@@ -60,6 +60,11 @@ extend-include = ["*.ipynb"]
 [tool.ruff.format]
 exclude = ["*.ipynb"]
 
+[tool.ruff.lint]
+ignore = [
+    "B905",  # zip-without-explicit-strict
+]
+
 [tool.ruff.lint.per-file-ignores]
 # Ignore common notebook issues
 "*.ipynb" = [

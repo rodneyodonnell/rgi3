@@ -64,6 +64,7 @@ class TestMCTSNode:
         assert len(node.children) == 3
         assert node.sum_player_values.shape == (3, 2)  # 3 actions x 2 players
         assert node.mean_player_values.shape == (3, 2)
+        assert np.allclose(node.mean_player_values, [[0.1, -0.1], [0.1, -0.1], [0.1, -0.1]])
         assert all(child is None for child in node.children)
 
     def test_node_initialization_size_mismatch(self):
@@ -96,6 +97,19 @@ class TestMCTSNode:
         # Should select action with highest prior initially
         selected_idx = node.select_action_index(c_puct=1.0, current_player=1)
         assert selected_idx == 1  # Action 2 (index 1)
+
+    def test_fpu_prevents_optimism_when_losing(self):
+        """Test that unvisited actions use parent value V(s) instead of 0.0."""
+        legal_actions = [1, 2, 3]
+        policy = np.array([0.85, 0.10, 0.05])
+        # Player 1 is losing (-0.7), but action 1 is slightly better (-0.5)
+        node = MCTSNode(legal_actions, policy, np.array([-0.7, 0.7]))
+        node.backup(0, np.array([-0.5, 0.5]))
+
+        # Action 0 has Q=-0.5, while unvisited actions 1 and 2 have Q=-0.7 (not 0.0).
+        # Therefore action 0 should still be selected on the next simulation.
+        selected_idx = node.select_action_index(c_puct=1.0, current_player=1)
+        assert selected_idx == 0
 
     def test_backup(self):
         """Test backup/update functionality."""
@@ -371,10 +385,13 @@ class TestGameIntegration:
             f"This suggests the recursive backup bug still exists."
         )
 
-        # All simulations hit the same action, so we should have consistent backups
-        assert search_result.legal_action_visit_counts[most_visited_idx] == 10, (
-            "Expected all simulations to hit the same action"
+        # With FPU initialized to prior_state_player_values (0.9) and uniform policy,
+        # all 7 actions have equal Q=0.9, so 10 simulations visit actions [2, 2, 2, 1, 1, 1, 1]
+        # (hitting the recursive backup case on the first 3 actions) rather than getting stuck on action 0.
+        assert search_result.legal_action_visit_counts[most_visited_idx] >= 2, (
+            "Expected multiple simulations to hit the most visited action (triggering recursive backup)"
         )
+        assert np.allclose(search_result.current_player_mean_values, 0.9, atol=0.01)
 
 
 @pytest.fixture
