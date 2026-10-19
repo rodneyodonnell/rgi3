@@ -102,7 +102,9 @@ class MCTSNode:
         num_actions = len(legal_actions)
         self.legal_action_visit_counts = np.zeros(num_actions, dtype=np.int32)  # N(s,a)
         self.sum_player_values = np.zeros((num_actions, self.num_players), dtype=np.float32)  # W(s,a,p)
-        self.mean_player_values = np.zeros((num_actions, self.num_players), dtype=np.float32)  # Q(s,a,p)
+        self.mean_player_values = (
+            np.broadcast_to(self.prior_state_player_values, (num_actions, self.num_players)).astype(np.float32).copy()
+        )  # Q(s,a,p) initialized to parent value V(s) for unvisited actions
 
         # Child nodes - indexed same as actions
         self.children: list[MCTSNode | None] = [None] * len(legal_actions)
